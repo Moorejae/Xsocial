@@ -1,0 +1,60 @@
+#!/bin/sh
+# Blocks a commit that would publish a credential or a media library.
+#
+# Why this exists: this repository (Moorejae/Xsocial) is PUBLIC, and `.gitignore` only protects a
+# file while its name still matches a rule. A rename, a copy, a forced `git add -f`, or a paste
+# into a Markdown file walks straight past it. This hook looks at what is actually staged.
+#
+# Enable once per clone:  git config core.hooksPath .githooks
+# Deliberate override:    git commit --no-verify   (say why in the handoff log)
+
+set -u
+fail=0
+
+say() { printf 'pre-commit: %s\n' "$*" >&2; }
+
+# 1. Credential-shaped paths, and media that must never enter a public repository.
+staged_paths=$(git diff --cached --name-only --diff-filter=ACM)
+for f in $staged_paths; do
+  case "$f" in
+    .env.example) continue ;;
+    .env|.env.*|*.env|*.env.*|*api*key*|*api-key*|*API*KEY*|*apikey*|*secret*|*credential*) ;;
+    *.pem|*.key|*.crt|*.p12|*.pfx|*.p8) ;;
+    *.mp4|*.mov|*.webm|*.mkv|*.wav|*.mp3|*.m4a|*.flac) ;;
+    *) continue ;;
+  esac
+  say "refusing credential- or media-shaped path: $f"
+  fail=1
+done
+
+# 2. Credential-shaped content, anywhere in the staged diff.
+#    Only added lines are inspected, so existing history is not re-litigated on every commit.
+added=$(git diff --cached -U0 -- . | grep -E '^\+' | grep -vE '^\+\+\+')
+
+if [ -n "$added" ]; then
+  # Provider-prefixed tokens and private keys: these have no legitimate place in this repo at all.
+  pat='AIza[0-9A-Za-z_-]{30,}|AQ\.[0-9A-Za-z._-]{20,}|ya29\.[0-9A-Za-z._-]{20,}|ghp_[0-9A-Za-z]{30,}|github_pat_[0-9A-Za-z_]{20,}|-----BEGIN [A-Z ]*PRIVATE KEY-----'
+  if printf '%s\n' "$added" | grep -nE "$pat" >/dev/null; then
+    say 'refusing commit: a provider token or private key is in the staged diff'
+    # Print the LINE NUMBER only. Printing even a truncated match put 18 live Gemini keys into a
+    # terminal transcript on 2026-10-27; a hook must never echo the thing it is protecting.
+    printf '%s\n' "$added" | grep -nE "$pat" | cut -d: -f1 | sed 's/^/  staged line /' >&2
+    fail=1
+  fi
+
+  # Bare long tokens: 40+ characters of key-ish alphabet, alone on a line. Catches a key whose
+  # provider prefix we have not seen before, which is exactly how "Gemini api key" looked.
+  bare='^[[:space:]]*[0-9A-Za-z_-]{40,}[[:space:]]*$'
+  if printf '%s\n' "$added" | sed 's/^+//' | grep -nE "$bare" >/dev/null; then
+    say 'refusing commit: a line that is nothing but a long opaque token'
+    printf '%s\n' "$added" | sed 's/^+//' | grep -nE "$bare" | sed 's/^\([0-9]*:\).\{0,8\}.*/\1<redacted>/' >&2
+    fail=1
+  fi
+fi
+
+if [ "$fail" -ne 0 ]; then
+  say 'commit blocked. Keep the value in .env or the ignored key file, and only its NAME in the repo.'
+  exit 1
+fi
+
+exit 0

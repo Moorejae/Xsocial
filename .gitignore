@@ -9,6 +9,49 @@
 *.env.*
 !.env.example
 
+# Loose credential dumps.
+#
+# A secret does not always arrive as `.env`. It arrives as a file someone dropped in the folder by
+# hand — `Gemini api key`, a downloaded `client_secret_*.json`, a `keys.txt`. Those match none of the
+# env rules above, and this repository is PUBLIC, so they are ignored BY SHAPE here. If a new shape
+# turns up, add it to this block; do not rely on remembering to `git add` selectively.
+secrets/
+*api*key*
+*api-key*
+*API*KEY*
+*apikey*
+*secret*.json
+client_secret*
+credentials*.json
+*credential*.txt
+*keys*.txt
+*keys*.csv
+*key*.txt
+# Anchored: `Gemini*` unanchored also matched `scripts/gemini_keys.py` and `config/gemini-pools.json`
+# on Windows, where core.ignorecase makes gitignore matching case-insensitive. The loose key file is
+# at the root, so anchor it there.
+/Gemini*
+/Gemini api key
+tokens*.json
+
+# Uploaded media never enters a public repository: size, and copyright. The libraries live on the
+# VPS; git holds code and configuration only. Anchored with a leading slash so that generated
+# page folders (`web/site/jephter/`) are NOT caught by `jephter`.
+/media/
+/music/
+/videos/
+/jephtah/
+/jephter/
+/emmanuel/
+*.mp4
+*.mov
+*.webm
+*.mkv
+*.wav
+*.mp3
+*.m4a
+*.flac
+
 # keys, logs, and build output
 keys/
 *.pem

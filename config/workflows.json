@@ -1,0 +1,43 @@
+{
+  "_note": "One block per workflow. No secrets here: this file is committed. Key *ids* live in gemini-pools.json; key values never leave the ignored key file.",
+  "jephter": {
+    "product_name": "Jephter Studio",
+    "channel_name": "Jephter",
+    "channel_handle": "@TODO-jephter-handle",
+    "site_host": "TODO.example.com",
+    "contact_email": "agumoorewe@gmail.com",
+    "description": "A private publishing tool that writes, narrates and uploads short videos to one YouTube channel that its owner has authorised.",
+    "persona": {
+      "tone": "romantic, whispery, close-mic, unhurried",
+      "pace": "slow",
+      "script_language": "English",
+      "voice_ref": "media/voices/jephter/ref.wav"
+    },
+    "gemini_pool": "jephter",
+    "oauth": {
+      "home": "/jephter/",
+      "privacy": "/jephter/privacy.html",
+      "terms": "/jephter/terms.html"
+    }
+  },
+  "emmanuel": {
+    "product_name": "Emmanuel Studio",
+    "channel_name": "Emmanuel",
+    "channel_handle": "@TODO-emmanuel-handle",
+    "site_host": "TODO.example.com",
+    "contact_email": "agumoorewe@gmail.com",
+    "description": "A private publishing tool that writes, narrates and uploads short videos to one YouTube channel that its owner has authorised.",
+    "persona": {
+      "tone": "romantic, whispery, close-mic, unhurried",
+      "pace": "slow",
+      "script_language": "English",
+      "voice_ref": "media/voices/emmanuel/ref.wav"
+    },
+    "gemini_pool": "emmanuel",
+    "oauth": {
+      "home": "/emmanuel/",
+      "privacy": "/emmanuel/privacy.html",
+      "terms": "/emmanuel/terms.html"
+    }
+  }
+}

@@ -121,6 +121,12 @@ wins until the owner says otherwise — every one of them was written from a mea
 Skills learned *in this project* go in `X\skills\<name>\SKILL.md`, same format as the library. See
 [X\skills\README.md](skills/README.md).
 
+| Load this project skill | When |
+| :--- | :--- |
+| **`x-vps-access`** | Reaching `169.58.212.7`; the `ssh`-on-PATH trap; key-then-password connection. |
+| **`x-gemini-key-pool`** | Anything touching Gemini keys or script writing: a failed generation, a 404/503/429, adding or rebalancing keys, or printing a config value. |
+| **`x-google-console-oauth`** | Creating or fixing a client's OAuth client, consent-screen rejection, uploads that die after a week, or moving the privacy/terms pages to a real domain. |
+
 ---
 
 ## 5. Getting in — current state, verified
@@ -316,3 +322,54 @@ anything about permissions.
 - [ ] Any new knowledge is a skill.
 - [ ] No credential appears anywhere in the transcript or the repository.
 - [ ] Nothing you did touched `178.18.245.136`.
+
+---
+
+## 12. The product: two independent shorts workflows
+
+Two clients, two YouTube channels, one pipeline each. They are named after the channels: **jephter** and
+**emmanuel**. Everything below exists to keep them independent, because the owner's requirement is that one
+channel's trouble never becomes the other's.
+
+### The independence contract
+
+| Resource | Rule |
+| :--- | :--- |
+| Google Cloud project | **one per client.** Quota is per project, so a shared project couples the two workflows |
+| OAuth client + refresh token | one per client, obtained in that client's own console |
+| Gemini keys | 9 / 9, disjoint (`config/gemini-pools.json`). A key is never in both pools |
+| Voice persona | one clip per workflow, tuned separately — two clones must not sound the same |
+| Media (videos, music) | separate folders per workflow |
+| Schedule | separate, so a failed run on one cannot blank the other's day |
+
+### What exists, and what runs it
+
+| Path | Purpose | Command |
+| :--- | :--- | :--- |
+| `config/workflows.json` | brand, channel handle, contact, persona, page paths. No secrets | — |
+| `config/gemini-pools.json` | which **key ids** belong to which workflow. No values | — |
+| `scripts/gemini_keys.py` | key split, rotation, model ladder, validation | `python scripts\gemini_keys.py --list` |
+| `scripts/youtube_auth.py` | loopback consent → refresh token → `secrets/youtube/<workflow>.json` | `python scripts\youtube_auth.py --workflow jephter` |
+| `scripts/build_site.py` | renders the privacy/terms pages Google requires | `python scripts\build_site.py` |
+| `scripts/deploy_site.py` | publishes `web/site/` to nginx on the VPS | `python scripts\deploy_site.py` |
+| `web/site/` | generated output. Edit the template in `build_site.py`, never these files | — |
+
+Load `x-gemini-key-pool` before touching keys, and `x-google-console-oauth` before touching a console.
+
+### Two facts that decide the console setup
+
+- **`videos.insert` has its own quota bucket: 100 calls per project per day** (Google quota calculator,
+  revision 2026-10-15). Two projects therefore allow 200 uploads a day in total, and that is a ceiling worth
+  knowing before a schedule is written.
+- **An OAuth app left in Testing status issues refresh tokens that expire in 7 days**, unless the only scopes are
+  name/email/profile. `youtube.upload` is not exempt. Publish the app, or the pipeline stops working next week.
+
+### Still open
+
+- A **domain → `169.58.212.7` → TLS** for the privacy/terms pages. Until then the pages answer on
+  `http://169.58.212.7/…`, which is enough to review but not enough for Google verification.
+- Voice tuning per workflow (romantic / whispery, and distinct from each other).
+- Script writing, video assembly, the uploader and the schedule.
+- The L1–L4 rungs from §8 around the whole run: systemd supervision, a watchdog, an email on exhaustion, and an
+  external heartbeat.
+
