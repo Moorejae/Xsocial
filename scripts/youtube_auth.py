@@ -35,6 +35,7 @@ Client id and secret come from `.env` (`JEPHTER_GOOGLE_CLIENT_ID` / `_CLIENT_SEC
 from __future__ import annotations
 
 import argparse
+import base64
 import http.server
 import json
 import os
@@ -131,8 +132,25 @@ def whoami(access_token: str) -> tuple[str, str]:
 
 
 def save(workflow: str, payload: dict) -> Path:
-    SECRETS.mkdir(parents=True, exist_ok=True)
-    path = SECRETS / f"{workflow}.json"
+    """Write the credential with the two secret fields sealed under AES-GCM.
+
+    The privacy policy served to Google says the refresh token is *encrypted at rest*, so it is.
+    Metadata (channel title, scopes, timestamps) stays readable so the file can be inspected without
+    a key; the client secret and refresh token are sealed, bound to the workflow name as associated
+    data so a file cannot be swapped between the two channels.
+    """
+    key = master_key()
+    sealed = dict(payload)
+    sealed["enc"] = "aesgcm-v1"
+    for field in ("client_secret", "refresh_token"):
+        if payload.get(field):
+            sealed[field + "_enc"] = _seal(key, payload[field], workflow)
+            sealed.pop(field, None)
+    return _write(sealed, SECRETS / f"{workflow}.json")
+
+
+def _write(payload: dict, path: Path) -> Path:
+    path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
     try:
         os.chmod(path, 0o600)
@@ -145,7 +163,66 @@ def load(workflow: str) -> dict:
     path = SECRETS / f"{workflow}.json"
     if not path.exists():
         raise SystemExit(f"{workflow}: no stored credential. Run the consent flow first.")
-    return json.loads(path.read_text(encoding="utf-8"))
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    if payload.get("enc") == "aesgcm-v1":
+        key = master_key()
+        for field in ("client_secret", "refresh_token"):
+            if payload.get(field + "_enc"):
+                payload[field] = _unseal(key, payload[field + "_enc"], workflow)
+    return payload
+
+
+# --------------------------------------------------------------------------------------
+# Encryption at rest
+# --------------------------------------------------------------------------------------
+
+def master_key() -> bytes:
+    """32 bytes from `X_SECRET_KEY` in .env, else from secrets/master.key (created once, 0600).
+
+    Keeping the key in `.env` means the ciphertext and the key are not in the same file. The
+    file fallback exists so the tool works unattended; it is weaker, and the note printed on
+    creation says so.
+    """
+    from cryptography.hazmat.primitives.ciphers.aead import AESGCM  # noqa: F401  (fail early if absent)
+
+    env = read_env("X_SECRET_KEY")
+    if env:
+        raw = base64.urlsafe_b64decode(env + "=" * (-len(env) % 4))
+        if len(raw) != 32:
+            raise SystemExit("X_SECRET_KEY in .env must be base64 of exactly 32 bytes")
+        return raw
+
+    path = ROOT / "secrets" / "master.key"
+    if path.exists():
+        raw = base64.urlsafe_b64decode(path.read_text(encoding="utf-8").strip())
+        if len(raw) != 32:
+            raise SystemExit(f"{path} does not hold 32 bytes")
+        return raw
+
+    raw = os.urandom(32)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(base64.urlsafe_b64encode(raw).decode(), encoding="utf-8")
+    try:
+        os.chmod(path, 0o600)
+    except OSError:
+        pass
+    print(f"created {path.relative_to(ROOT)} - preferably copy its contents into .env as X_SECRET_KEY "
+          f"and delete the file, so the key does not sit beside the data it protects.", file=sys.stderr)
+    return raw
+
+
+def _seal(key: bytes, plaintext: str, aad: str) -> str:
+    from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+
+    nonce = os.urandom(12)
+    return base64.b64encode(nonce + AESGCM(key).encrypt(nonce, plaintext.encode(), aad.encode())).decode()
+
+
+def _unseal(key: bytes, blob: str, aad: str) -> str:
+    from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+
+    raw = base64.b64decode(blob)
+    return AESGCM(key).decrypt(raw[:12], raw[12:], aad.encode()).decode()
 
 
 class _Callback(http.server.BaseHTTPRequestHandler):
@@ -250,17 +327,57 @@ def refresh(workflow: str) -> str:
     return tokens["access_token"]
 
 
+def selftest() -> int:
+    """Network-free proof that the sealing does what the privacy policy claims."""
+    import tempfile
+
+    key = master_key()
+    secret = "synthetic-refresh-token-value-0123456789"
+    blob = _seal(key, secret, "jephter")
+    if _unseal(key, blob, "jephter") != secret:
+        print("FAIL round-trip returned something else")
+        return 1
+    print("ok   seal/unseal round-trip")
+
+    try:
+        _unseal(key, blob, "emmanuel")
+        print("FAIL ciphertext accepted under the wrong workflow name")
+        return 1
+    except Exception:
+        print("ok   ciphertext rejected under the wrong workflow name")
+
+    with tempfile.TemporaryDirectory() as d:
+        path = Path(d) / "probe.json"
+        _write({"workflow": "jephter", "refresh_token_enc": blob, "channel_title": "probe"}, path)
+        text = path.read_text(encoding="utf-8")
+        if secret in text:
+            print("FAIL plaintext is present in the written file")
+            return 1
+        mode = oct(path.stat().st_mode)[-3:]
+        platform_note = "posix mode, enforced on Linux" if os.name == "posix" else "posix mode is not enforced on Windows"
+    print(f"ok   no plaintext in the written file ({mode}: {platform_note})")
+    return 0
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description="YouTube OAuth for one X workflow (never prints a secret)")
-    ap.add_argument("--workflow", required=True, choices=WORKFLOWS)
+    ap.add_argument("--workflow", choices=WORKFLOWS)
     ap.add_argument("--port", type=int, default=DEFAULT_PORT)
     ap.add_argument("--client-id", default="")
     ap.add_argument("--client-secret", default="")
+    ap.add_argument("--selftest", action="store_true",
+                    help="check the encryption at rest without touching Google")
     ap.add_argument("--print-url", action="store_true",
                     help="print the consent URL only. The client id appears in it by design — "
                          "Google puts it in every consent URL; the secret never does.")
     ap.add_argument("--access-token", action="store_true", help="refresh and report the channel")
     a = ap.parse_args()
+
+    if a.selftest:
+        return selftest()
+
+    if not a.workflow:
+        ap.error("--workflow is required unless --selftest is given")
 
     if a.print_url:
         # The secret is deliberately not required here: showing the consent URL is a read-only,

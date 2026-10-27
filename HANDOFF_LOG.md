@@ -4,6 +4,57 @@ Newest first. Every change gets an entry, with evidence. See [AGENTS.md](AGENTS.
 
 ---
 
+## 2026-10-27 (the pool claims checked, the token actually encrypted, the pages looked at)
+
+**Plane(s):** this folder + `169.58.212.7` (the pages were reopened in a browser to look at them). No new server
+change; the site deployed earlier is unchanged.
+
+**Asked:** (continuing the owner's "secure their console, split the keys" stage) — make sure what is written down is
+true and verified rather than asserted.
+
+**Changed:**
+
+| File | Change | Why |
+| :--- | :--- | :--- |
+| `scripts/gemini_keys.py` | new `--audit`: eight invariants — count, uniqueness, no truncated key, **pools disjoint**, **pools balanced**, no stale id, nothing unowned, at least one pool populated. Network-free | the 9/9 independence is the whole point of the split, so it is now checked instead of assumed, and it is the command to run **after rotating keys** |
+| `scripts/gemini_keys.py` | `write_pools()` now preserves `_`-prefixed annotations | it was dropping `_status`, i.e. the only machine-readable record that these keys are due for rotation |
+| `scripts/youtube_auth.py` | refresh token and client secret **sealed with AES-GCM** (`cryptography` 49.0.0, already installed), key from `X_SECRET_KEY` in `.env` else `secrets/master.key` (created 0600), workflow name as associated data | the privacy policy served to Google says the token is encrypted at rest. It was not — it was plaintext JSON. Either the code or the text had to change |
+| `scripts/youtube_auth.py` | new `--selftest`: round-trip, rejection under the wrong workflow name, and no plaintext on disk | proves the claim without touching Google |
+| `.env.example` | `X_SECRET_KEY` added **by name** with the one-liner that generates it | |
+| `AGENTS.md` §12 | "Guards" block: `git config core.hooksPath .githooks` (per clone — the guard is **inert** until it runs), `--audit`, `--selftest`, plus the rule that the page text and the encryption move together | |
+| `skills/x-google-console-oauth` | the credential section now describes the sealing and the self-test | |
+
+**Verified:**
+
+```text
+python scripts\youtube_auth.py --selftest
+  ok   seal/unseal round-trip
+  ok   ciphertext rejected under the wrong workflow name
+  ok   no plaintext in the written file (666: posix mode is not enforced on Windows)
+  exit=0
+
+python scripts\gemini_keys.py --audit
+  ok   key file has 18 keys          ok   every key is unique
+  ok   no truncated key              ok   the two pools are disjoint
+  ok   pools are balanced: jephter=9 emmanuel=9
+  ok   every assigned id exists in the key file (0 stale)
+  ok   every key belongs to a pool or the spare (0 unowned)
+  ok   at least one workflow has keys
+  8/8 invariants hold
+
+python scripts\gemini_keys.py --split   ->  jephter=9, emmanuel=9, and `_status` is still in the file after the write
+git check-ignore -v secrets/master.key  ->  .gitignore:18:secrets/   secrets/master.key
+```
+
+Looked at the delivered page in a browser, not just at its status code: `http://169.58.212.7/jephter/privacy.html`
+renders as a clean policy page — nav, eight numbered sections, the three YouTube/Google policy links, the contact
+address in the footer.
+
+**Left open:** unchanged from the entry below — key rotation, client id/secret per workflow, the domain for TLS,
+then voice.
+
+---
+
 ## 2026-10-27 (INCIDENT: all 18 Gemini keys were printed in full to a terminal; hook rewritten to never echo)
 
 **Plane(s):** this folder. No server change. No third party received anything.

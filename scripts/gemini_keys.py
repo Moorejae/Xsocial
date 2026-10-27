@@ -130,8 +130,21 @@ def load_pools(keys: list[str]) -> dict[str, list[str]]:
 
 
 def write_pools(pools: dict[str, list[str]]) -> None:
+    """Write the pools, preserving any `_`-prefixed annotation already in the file.
+
+    `_status` records that these keys are due for rotation. Rewriting the file used to drop it,
+    which would delete the only machine-readable warning that the values are compromised.
+    """
     POOLS_FILE.parent.mkdir(parents=True, exist_ok=True)
-    ordered = {w: pools.get(w, []) for w in WORKFLOWS}
+    ordered: dict = {}
+    if POOLS_FILE.exists():
+        try:
+            existing = json.loads(POOLS_FILE.read_text(encoding="utf-8"))
+            ordered.update({k: v for k, v in existing.items() if k.startswith("_")})
+        except json.JSONDecodeError:
+            pass
+    for w in WORKFLOWS:
+        ordered[w] = pools.get(w, [])
     ordered["spare"] = pools.get("spare", [])
     POOLS_FILE.write_text(json.dumps(ordered, indent=2) + "\n", encoding="utf-8")
 
@@ -337,10 +350,43 @@ def pool_for(workflow: str, models: tuple[str, ...] = MODEL_LADDER) -> GeminiPoo
 # CLI
 # --------------------------------------------------------------------------------------
 
+def audit(keys: list[str], pools: dict[str, list[str]]) -> list[tuple[bool, str]]:
+    """Invariants the split has to hold. Run after any rotation or hand-edit.
+
+    These are the properties the two workflows' independence actually rests on, so they are checked
+    rather than assumed: one pool per workflow, disjoint, balanced, and no key belonging to nobody.
+    """
+    ids = [key_id(k) for k in keys]
+    checks: list[tuple[bool, str]] = []
+
+    checks.append((len(keys) >= 2, f"key file has {len(keys)} keys"))
+    checks.append((len(set(keys)) == len(keys), "every key is unique"))
+
+    short = [key_id(k) for k in keys if len(k) < 30]
+    checks.append((not short, f"no truncated key ({len(short)} under 30 chars)"))
+
+    a, b = (pools.get(w, []) for w in WORKFLOWS)
+    checks.append((not (set(a) & set(b)), "the two pools are disjoint"))
+    checks.append((abs(len(a) - len(b)) <= 1,
+                   f"pools are balanced: {WORKFLOWS[0]}={len(a)} {WORKFLOWS[1]}={len(b)}"))
+
+    live = set(ids)
+    assigned = set(a) | set(b)
+    checks.append((assigned <= live, f"every assigned id exists in the key file "
+                                     f"({len(assigned - live)} stale)"))
+    spare = pools.get("spare", [])
+    unowned = live - assigned - set(spare)
+    checks.append((not unowned, f"every key belongs to a pool or the spare ({len(unowned)} unowned)"))
+
+    checks.append((len(a) + len(b) > 0, "at least one workflow has keys"))
+    return checks
+
+
 def main(argv: list[str]) -> int:
     ap = argparse.ArgumentParser(description="X Gemini key pool (never prints key values)")
     ap.add_argument("--list", action="store_true", help="show key ids and pool membership")
     ap.add_argument("--validate", action="store_true", help="check every key, status only")
+    ap.add_argument("--audit", action="store_true", help="check split invariants, no network")
     ap.add_argument("--split", action="store_true", help="write config/gemini-pools.json")
     ap.add_argument("--models", action="store_true", help="list models one key can see")
     ap.add_argument("--generate", nargs=2, metavar=("WORKFLOW", "PROMPT"), help="one live generation")
@@ -362,6 +408,21 @@ def main(argv: list[str]) -> int:
         pools = split_keys(keys)
         write_pools(pools)
         print(f"wrote {POOLS_FILE.relative_to(ROOT)}: " + ", ".join(f"{w}={len(ids)}" for w, ids in pools.items()))
+
+    if args.audit:
+        pools = load_pools(keys)
+        checks = audit(keys, pools)
+        failed = 0
+        for ok, msg in checks:
+            failed += 0 if ok else 1
+            print(f"  {'ok  ' if ok else 'FAIL'} {msg}")
+        status = ""
+        if POOLS_FILE.exists():
+            status = json.loads(POOLS_FILE.read_text(encoding="utf-8")).get("_status", "")
+        if status:
+            print(f"  note {status}")
+        print(f"{len(checks) - failed}/{len(checks)} invariants hold")
+        return 0 if failed == 0 else 1
 
     if args.validate:
         pools = load_pools(keys)

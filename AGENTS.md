@@ -364,6 +364,18 @@ Load `x-gemini-key-pool` before touching keys, and `x-google-console-oauth` befo
 - **An OAuth app left in Testing status issues refresh tokens that expire in 7 days**, unless the only scopes are
   name/email/profile. `youtube.upload` is not exempt. Publish the app, or the pipeline stops working next week.
 
+### Guards, and the one command a fresh clone needs
+
+```powershell
+git config core.hooksPath .githooks          # per clone: the pre-commit guard is inert until this runs
+python scripts\gemini_keys.py --audit        # 9/9, disjoint, balanced, nothing unowned. No network.
+python scripts\youtube_auth.py --selftest    # encryption at rest actually seals. No network.
+```
+
+The refresh token and client secret are sealed with AES-GCM under a key from `X_SECRET_KEY` in `.env` (falling
+back to `secrets/master.key`), because the privacy policy served to Google states that the token is encrypted at
+rest. If that ever stops being true, the page text has to change in the same commit.
+
 ### Still open
 
 - A **domain → `169.58.212.7` → TLS** for the privacy/terms pages. Until then the pages answer on

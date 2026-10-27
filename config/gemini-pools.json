@@ -1,4 +1,5 @@
 {
+  "_status": "Keys exposed in a terminal transcript 2026-10-27 - rotate before the first production run. Ids below change when the values change; keep 9/9.",
   "jephter": [
     "3087b333c979",
     "7e145fffd291",
@@ -21,6 +22,5 @@
     "7670ed8d4914",
     "283f73bb4fe2"
   ],
-  "spare": [],
-  "_status": "Keys exposed in a terminal transcript 2026-10-27 - rotate before the first production run. Ids below change when the values change; keep 9/9."
+  "spare": []
 }

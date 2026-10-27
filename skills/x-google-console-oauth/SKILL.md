@@ -56,9 +56,19 @@ python scripts\youtube_auth.py --workflow jephter               # real consent, 
 python scripts\youtube_auth.py --workflow jephter --access-token # refresh + report the channel
 ```
 
-The credential lands in `secrets/youtube/<workflow>.json` (mode 0600, git-ignored). **The proof that consent went
-to the right channel is `channels.list(mine=true)` printed after the exchange** — the account that consented is not
-necessarily the channel that was meant, and with two clients the wrong one is easy to pick.
+The credential lands in `secrets/youtube/<workflow>.json` (git-ignored), **sealed with AES-GCM**: the client secret
+and refresh token are ciphertext under a key from `X_SECRET_KEY` in `.env` (falling back to `secrets/master.key`),
+bound to the workflow name as associated data so one channel's file cannot be used as the other's. Metadata stays
+readable so the file can be inspected without the key. The privacy policy states the token is encrypted at rest —
+keep those two facts in step.
+
+```powershell
+python scripts\youtube_auth.py --selftest     # round-trip, wrong-workflow rejection, no plaintext on disk
+```
+
+**The proof that consent went to the right channel is `channels.list(mine=true)` printed after the exchange** — the
+account that consented is not necessarily the channel that was meant, and with two clients the wrong one is easy to
+pick.
 
 ## The two traps that cost a week each
 
