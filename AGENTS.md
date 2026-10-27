@@ -263,7 +263,51 @@ fallback — test it.
 
 ---
 
-## 10. Before you report done
+## 10. GitHub
+
+| | |
+| :--- | :--- |
+| Remote | `origin` → `https://github.com/Moorejae/Xsocial.git` — **public** |
+| Owner | `Moorejae` |
+| Token | `GITHUB_TOKEN` in `.env` — fine-grained PAT. Never commit it, never print it. |
+| Git auth | the **`gh` CLI credential helper** (`gh auth setup-git`), so the token is never written into `.git/config` |
+| Branch | `main` |
+
+```powershell
+git add -A
+git commit -m "..."
+git push origin main
+```
+
+### This repository is PUBLIC
+
+Anything committed here is world-readable and effectively permanent — deleting a commit does not un-publish it, because
+forks, caches and crawlers keep copies. So:
+
+- **Never commit `.env`, keys, tokens, or anything derived from them.** `.gitignore` covers env files by shape.
+- **Never commit customer data, personal data, or logs that contain either.**
+- If you need to store a secret for a workflow, use the GitHub Actions secret store, not a file.
+- Before the first commit of any new file, ask: *would I be comfortable if a stranger read this?*
+
+### Creating another repository
+
+The owner's fine-grained PAT can push to repositories it is scoped to. Creating a **new** repository needs
+`Administration: write` on the token, which a repo-scoped PAT does not have — so use the `gh` CLI, whose login carries
+the `repo` scope:
+
+```powershell
+gh repo create <name> --public --description "..."
+git remote add origin https://github.com/Moorejae/<name>.git
+git push -u origin main
+```
+
+Via the API instead: `POST https://api.github.com/user/repos` with `{"name": "...", "private": false}`. If that answers
+`403`/`404`, it is the token's scope, not the payload — the error message says "Resource not accessible" rather than
+anything about permissions.
+
+---
+
+## 11. Before you report done
 
 - [ ] The thing runs, and you have the command output that proves it.
 - [ ] You re-ran the check after your last change, not before it.

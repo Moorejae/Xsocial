@@ -4,6 +4,47 @@ Newest first. Every change gets an entry, with evidence. See [AGENTS.md](AGENTS.
 
 ---
 
+## 2026-10-27 (published as a public repository: Moorejae/Xsocial)
+
+**Plane(s):** GitHub + this folder. No server change.
+
+**Asked:** add the same GitHub token to this project's `.env`, and create a new **public** repository called `Xsocial`.
+
+**Changed:**
+
+| Item | Detail |
+| :--- | :--- |
+| `.env` | `GITHUB_TOKEN` (copied from `REZMO.env`, fine-grained PAT), `GITHUB_USER=Moorejae`, `GITHUB_REPO=Xsocial` |
+| remote | `origin` → `https://github.com/Moorejae/Xsocial.git` |
+| branch | renamed `master` → `main` (the first push failed with `src refspec main does not match any` because `git init` had produced `master`) |
+| git auth | `gh auth setup-git`, so pushes use the `gh` credential helper and **the token is never written into `.git/config`** |
+| `AGENTS.md` | new §10 GitHub: the remote, the credential path, and the public-repo rules; "before you report done" became §11 |
+
+**Verified:**
+
+```text
+created: Moorejae/Xsocial private=False
+local  HEAD 42b2d68af00402a5600870ff785e839fa28b0fa1
+remote main 42b2d68af00402a5600870ff785e839fa28b0fa1     match: True
+visibility: public
+files at root on the remote:
+  .env.example   .gitignore   AGENTS.md   HANDOFF_LOG.md   scripts   skills
+```
+
+**The important line is the one that is missing: `.env` is not on the remote.** Confirmed by listing the repository
+contents through the public API, not by trusting `.gitignore`.
+
+**Token facts worth keeping:** it authenticates as `Moorejae` and can read and push to the owner's repositories. It is
+scoped to those repos, so it **cannot create a new repository** — creation needs `Administration: write` or the `gh`
+login, which is why the repo was made with `gh`'s scope rather than the PAT.
+
+**Left open — a decision for the owner, not something to change unasked:** this repository is public, and `AGENTS.md`
+names both server addresses (`178.18.245.136`, `169.58.212.7`) and the alert mailbox, because the prohibition is only
+enforceable if the host is named. No credential is published — but if the owner would rather the IPs were not public,
+the fix is to name the hosts by role (`REZMO production`, `this project's VPS`) and keep the addresses in `.env` only.
+
+---
+
 ## 2026-10-27 (access proven over a key; the password reduced to a fallback)
 
 **Plane(s):** `169.58.212.7` only. Two server-side changes: one public key installed, and `authorized_keys` rewritten to
