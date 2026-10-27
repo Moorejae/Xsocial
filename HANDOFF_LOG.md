@@ -20,6 +20,8 @@ true and verified rather than asserted.
 | `scripts/gemini_keys.py` | `write_pools()` now preserves `_`-prefixed annotations | it was dropping `_status`, i.e. the only machine-readable record that these keys are due for rotation |
 | `scripts/youtube_auth.py` | refresh token and client secret **sealed with AES-GCM** (`cryptography` 49.0.0, already installed), key from `X_SECRET_KEY` in `.env` else `secrets/master.key` (created 0600), workflow name as associated data | the privacy policy served to Google says the token is encrypted at rest. It was not — it was plaintext JSON. Either the code or the text had to change |
 | `scripts/youtube_auth.py` | new `--selftest`: round-trip, rejection under the wrong workflow name, and no plaintext on disk | proves the claim without touching Google |
+| `scripts/gemini_keys.py` | `generate()` now has a **wall-clock budget** (`total_timeout=300 s`) and per-request timeouts capped by the remaining budget | a hung request could previously stall a caller for 4 models × 2 attempts × 120 s = **16 min of silence**, which is exactly the failure mode an unattended pipeline cannot have |
+| `scripts/gemini_keys.py` | `ladder_for(workflow)`: each workflow **starts on a different rung** of the model ladder | measured: both pipelines starting on `3.8-flash`, which 503s under load, is self-inflicted contention. Slower rung first for one of them is faster overall |
 | `.env.example` | `X_SECRET_KEY` added **by name** with the one-liner that generates it | |
 | `AGENTS.md` §12 | "Guards" block: `git config core.hooksPath .githooks` (per clone — the guard is **inert** until it runs), `--audit`, `--selftest`, plus the rule that the page text and the encryption move together | |
 | `skills/x-google-console-oauth` | the credential section now describes the sealing and the self-test | |
@@ -49,6 +51,14 @@ git check-ignore -v secrets/master.key  ->  .gitignore:18:secrets/   secrets/mas
 Looked at the delivered page in a browser, not just at its status code: `http://169.58.212.7/jephter/privacy.html`
 renders as a clean policy page — nav, eight numbered sections, the three YouTube/Google policy links, the contact
 address in the footer.
+
+Two timings that motivated the last two changes, same prompt both times:
+
+```text
+before the ladder rotation        jephter 128.4 s (3.8-flash 503 x2, then 3.6)     emmanuel 102.9 s
+after  (emmanuel starts at 3.6)   emmanuel 5.8 s
+ladder_for('jephter')[0] -> gemini-3.8-flash      ladder_for('emmanuel')[0] -> gemini-3.6-flash
+```
 
 **Left open:** unchanged from the entry below — key rotation, client id/secret per workflow, the domain for TLS,
 then voice.

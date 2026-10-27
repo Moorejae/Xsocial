@@ -259,7 +259,7 @@ class GeminiPool:
 
     def generate(self, prompt: str, *, system: str | None = None, temperature: float = 0.9,
                  max_output_tokens: int = 4096, json_mode: bool = False,
-                 thinking_budget: int | None = None) -> str:
+                 thinking_budget: int | None = None, total_timeout: float = 300.0) -> str:
         """One completion, rotated across the pool.
 
         `thinking_budget=0` disables thinking. It matters: thinking tokens are billed against
@@ -281,13 +281,22 @@ class GeminiPool:
 
         last = "no attempt made"
         n = 0
+        started = time.time()
         for model in self.models:
             for attempt in range(self.attempts_per_model):
+                # A hung request used to stall the caller for up to 4 models x 2 attempts x 120 s,
+                # i.e. 16 minutes of silence. An unattended pipeline needs a wall-clock budget, and
+                # it needs to fail loudly at the end of it rather than hang.
+                remaining = total_timeout - (time.time() - started)
+                if remaining <= 15:
+                    raise PoolExhausted(
+                        f"{self.workflow}: {total_timeout:.0f}s budget exhausted after {model}; last: {last}")
                 keys = self._ready_keys()
                 key = keys[n % len(keys)]
                 n += 1
                 kid = key_id(key)[:4]
-                status, body = _request(f"{BASE_URL}/models/{model}:generateContent", key, payload)
+                status, body = _request(f"{BASE_URL}/models/{model}:generateContent", key, payload,
+                                        timeout=min(120.0, remaining))
                 if status == 200 and isinstance(body, dict):
                     text, why = _text_of(body)
                     if text:
@@ -338,12 +347,24 @@ class PoolExhausted(GeminiError):
     """Raised when a workflow's pool cannot serve a request. Escalate (L3), never swallow."""
 
 
-def pool_for(workflow: str, models: tuple[str, ...] = MODEL_LADDER) -> GeminiPool:
+def ladder_for(workflow: str) -> tuple[str, ...]:
+    """Rotate the ladder per workflow so the two pipelines do not start on the same model.
+
+    Measured: the newest flash model answers HTTP 503 under load. Two independent workflows that
+    both retry the same contended model in the same minute is self-inflicted contention, so each
+    starts on a different rung and still walks the whole ladder before giving up.
+    """
+    i = WORKFLOWS.index(workflow) % len(MODEL_LADDER)
+    return MODEL_LADDER[i:] + MODEL_LADDER[:i]
+
+
+def pool_for(workflow: str, models: tuple[str, ...] | None = None) -> GeminiPool:
     """Build the workflow's pool from the key file + config/gemini-pools.json."""
     keys = load_keys()
     by_id = {key_id(k): k for k in keys}
     assigned = load_pools(keys).get(workflow, [])
-    return GeminiPool(workflow=workflow, keys=[by_id[i] for i in assigned if i in by_id], models=models)
+    return GeminiPool(workflow=workflow, keys=[by_id[i] for i in assigned if i in by_id],
+                      models=models or ladder_for(workflow))
 
 
 # --------------------------------------------------------------------------------------

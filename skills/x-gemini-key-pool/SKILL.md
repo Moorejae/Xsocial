@@ -61,11 +61,14 @@ is deliberate: an accidental 10th key in one pool would look like a quota increa
 | `gemini-2.5-flash` and `gemini-2.0-flash` **still appear in `models.list`** but answer `generateContent` with **HTTP 404** *"no longer available to new users"* | raw 404 body quoted in the handoff log | listing a model is not evidence it generates; only a generate call is |
 | `gemini-3.8-flash` answers **HTTP 503 UNAVAILABLE** *"currently experiencing high demand"* often enough to fail a whole pool cycle | `--generate jephter` failed 4/4 on 3.8, then `--validate` succeeded on 3.6 | a single model is not a usable dependency → `MODEL_LADDER` |
 | Thinking tokens are billed against `maxOutputTokens` | `maxOutputTokens=16` with thinking on → **empty candidate**, `finishReason STOP`, `thoughtsTokenCount 58` | an empty answer is a *ceiling* problem, not a key problem. `generate()` raises `GeminiError` for it instead of retrying |
-| Latency is wildly variable | same prompt: 7.3 s, 21 s, 138 s | timeouts are 120 s in `generate`, 45 s in `--validate` |
+| Latency is wildly variable | same prompt: 7.3 s, 21 s, 138 s | timeouts are 120 s per request, and `generate()` holds a **300 s wall-clock budget** so a hung request cannot stall a caller for 16 minutes |
+| Two workflows starting on the same model is slower, not faster | emmanuel on `3.8-flash` first: 102.9 s; starting on `3.6-flash`: **5.8 s** | `ladder_for(workflow)` rotates the ladder per workflow |
 | Serial validation is unusable | 18 keys serial ran **> 30 min** without finishing | `--validate` uses 8 threads; the sweep now finishes in about a minute |
 
 `MODEL_LADDER` is walked in order, on a **fresh key** per attempt: `gemini-3.8-flash` → `3.6-flash` → `3.5-flash` →
-`3.1-flash-lite`. Two attempts per rung, exponential backoff with jitter between attempts.
+`3.1-flash-lite`. Two attempts per rung, exponential backoff with jitter between attempts, all inside a 300 s
+wall-clock budget. Each workflow **starts at a different rung** (`ladder_for`) so the two pipelines do not queue
+behind the same contended model.
 
 Other models these keys can reach, worth knowing before the pipeline is built: `gemini-3.8-flash-tts` and
 `gemini-3.1-flash-tts-preview` (narration — see the voice work), `lyria-3.5` (music), `gemini-3.5-transcribe`.
