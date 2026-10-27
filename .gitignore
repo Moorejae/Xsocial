@@ -1,0 +1,24 @@
+# Secrets and generated state are never committed.
+#
+# Env files are ignored BY SHAPE rather than by exact path, because an exact-path rule does
+# not cover a suffixed copy — and a copy is exactly how a secret ends up in a commit.
+.env
+.env.*
+!.env.example
+*.env
+*.env.*
+!.env.example
+
+# keys, logs, and build output
+keys/
+*.pem
+*.key
+*.crt
+*.log
+logs/
+__pycache__/
+*.pyc
+node_modules/
+dist/
+data/
+media/
