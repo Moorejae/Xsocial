@@ -57,11 +57,14 @@ keys/
 *.pem
 *.key
 *.crt
-*.log
-logs/
+*.loglogs/
 __pycache__/
 *.pyc
 node_modules/
 dist/
 data/
 media/
+
+# Render output: videos, reports, the TTS cache and the usage ledger. All regenerable.
+/out/
+

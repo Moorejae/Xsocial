@@ -126,6 +126,8 @@ Skills learned *in this project* go in `X\skills\<name>\SKILL.md`, same format a
 | **`x-vps-access`** | Reaching `169.58.212.7`; the `ssh`-on-PATH trap; key-then-password connection. |
 | **`x-gemini-key-pool`** | Anything touching Gemini keys or script writing: a failed generation, a 404/503/429, adding or rebalancing keys, or printing a config value. |
 | **`x-google-console-oauth`** | Creating or fixing a client's OAuth client, consent-screen rejection, uploads that die after a week, or moving the privacy/terms pages to a real domain. |
+| **`x-video-pipeline`** | Producing a short for either channel; a render with no audio, no captions, the wrong font or the wrong length; a song or clip that keeps recurring. |
+| **`x-voice-personas`** | A video that sounds wrong, fast, loud or not whispery; choosing a voice; keeping the two channels' voices distinct; TTS mime or 429 problems. |
 
 ---
 
@@ -338,23 +340,54 @@ channel's trouble never becomes the other's.
 | Google Cloud project | **one per client.** Quota is per project, so a shared project couples the two workflows |
 | OAuth client + refresh token | one per client, obtained in that client's own console |
 | Gemini keys | 9 / 9, disjoint (`config/gemini-pools.json`). A key is never in both pools |
-| Voice persona | one clip per workflow, tuned separately — two clones must not sound the same |
-| Media (videos, music) | separate folders per workflow |
-| Schedule | separate, so a failed run on one cannot blank the other's day |
+| Voice persona | one voice per workflow, chosen by audition — **Leda** vs **Pulcherrima**, both whispery, deliberately different in breath and steadiness |
+| Media (videos, music) | separate folders per workflow, and separate labels |
+| Song used | separate libraries; the same track never repeats within 3 videos, and the excerpt starts somewhere different every time |
+| Schedule | separate, so a failed run on one cannot blank the other's day (nothing is scheduled yet) |
+
+### The video brief, as the owner set it
+
+Romance and couple-focused scripts for both channels; **each video at most 50 seconds**; each workflow uses its own
+videos and its own songs; scenes are cut ForChi-style (hard cuts every ~2.6-4.8 s, never a crossfade); songs are
+labelled and edited to length rather than chopped up, but **the excerpt starts somewhere different in every video so
+no two videos sound the same**; captions in REZMO's own typeface (Jost) and **bold**; the Gemini keys use the same
+waterfall as ForChi (a key that is refused or out of quota is demoted, and the next one is tried).
 
 ### What exists, and what runs it
 
 | Path | Purpose | Command |
 | :--- | :--- | :--- |
-| `config/workflows.json` | brand, channel handle, contact, persona, page paths. No secrets | — |
+| `config/workflows.json` | brand, channel, contact, persona, **video/voice/caption/music settings**. No secrets | — |
 | `config/gemini-pools.json` | which **key ids** belong to which workflow. No values | — |
-| `scripts/gemini_keys.py` | key split, rotation, model ladder, validation | `python scripts\gemini_keys.py --list` |
+| `config/scenes/<wf>.json` | the measured + vision-labelled clip manifest | `python scripts\x_media.py --label <wf>` |
+| `config/songs/<wf>.json` | the measured song manifest | same command |
+| `scripts/gemini_keys.py` | key split, rotation, model ladder, TTS, validation | `python scripts\gemini_keys.py --audit` |
+| `scripts/x_media.py` | label clips and songs; `--vision` adds subject/baked-text | `python scripts\x_media.py --label jephter` |
+| `scripts/x_script.py` | romance script writer + the ending guard | `python scripts\x_script.py --workflow jephter` |
+| `scripts/x_voice.py` | TTS narration, one wav per line, audition mode | `python scripts\x_voice.py --workflow jephter --audition` |
+| `scripts/x_render.py` | cut plan, song window, captions, assembly | `python scripts\x_render.py --workflow jephter` |
+| `scripts/x_ffmpeg.py` | shared ffmpeg plumbing (peak gain, never `loudnorm`) | — |
+| `scripts/make_fonts.py` | Jost Bold from REZMO's own variable font | `python scripts\make_fonts.py` |
+| `scripts/make_assets.py` | the caption scrim | `python scripts\make_assets.py` |
+| `scripts/bootstrap_vps.py` | ffmpeg + fonts on the VPS, then verify | `python scripts\bootstrap_vps.py` |
 | `scripts/youtube_auth.py` | loopback consent → refresh token → `secrets/youtube/<workflow>.json` | `python scripts\youtube_auth.py --workflow jephter` |
-| `scripts/build_site.py` | renders the privacy/terms pages Google requires | `python scripts\build_site.py` |
-| `scripts/deploy_site.py` | publishes `web/site/` to nginx on the VPS | `python scripts\deploy_site.py` |
-| `web/site/` | generated output. Edit the template in `build_site.py`, never these files | — |
+| `scripts/build_site.py` / `deploy_site.py` | the privacy/terms pages Google requires | `python scripts\build_site.py` |
+| `jephtah/`, `emmanuel/` | the owner's clip and song libraries (git-ignored) | — |
+| `out/<workflow>/` | renders, reports, voice cache, usage ledger (git-ignored) | — |
 
-Load `x-gemini-key-pool` before touching keys, and `x-google-console-oauth` before touching a console.
+Load `x-gemini-key-pool` before touching keys, `x-google-console-oauth` before touching a console,
+`x-video-pipeline` before touching a render, and `x-voice-personas` before touching a voice.
+
+### One command, per channel
+
+```powershell
+python scripts\x_render.py --workflow jephter      # script -> voice -> cuts -> song -> 50s mp4
+python scripts\x_render.py --workflow emmanuel
+```
+
+Each writes `out/<workflow>/<name>.mp4` plus a `.json` sidecar (phrases, per-line durations, every clip with its
+mood/subject, the song and its offset, levels, `under_cap`). The sidecar is the evidence; read it, and look at a
+frame, because a file that exists is not a file that is right.
 
 ### Two facts that decide the console setup
 
@@ -380,8 +413,10 @@ rest. If that ever stops being true, the page text has to change in the same com
 
 - A **domain → `169.58.212.7` → TLS** for the privacy/terms pages. Until then the pages answer on
   `http://169.58.212.7/…`, which is enough to review but not enough for Google verification.
-- Voice tuning per workflow (romantic / whispery, and distinct from each other).
-- Script writing, video assembly, the uploader and the schedule.
-- The L1–L4 rungs from §8 around the whole run: systemd supervision, a watchdog, an email on exhaustion, and an
-  external heartbeat.
+- **The uploader.** `youtube_auth.py` obtains the credential; nothing calls `videos.insert` yet.
+- **Scheduling and the L1–L4 rungs** from §8: systemd supervision, a watchdog, an email on exhaustion, and an
+  external heartbeat. Nothing runs unattended today.
+- **Voice cloning.** Both channels are on Gemini TTS today. A real clone per workflow (F5-TTS, as ForChi uses) needs
+  one reference clip per workflow; `x_voice.synthesize_phrase` is the seam.
+- **TTS quota** is the tightest limit in the pipeline. It ran out mid-build on 2026-10-28; see `x-voice-personas`.
 

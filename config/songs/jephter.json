@@ -1,0 +1,117 @@
+{
+  "workflow": "jephter",
+  "songs_dir": "jephtah/songs",
+  "source": "scripts/x_media.py --label (measured)",
+  "songs": [
+    {
+      "file": "Ascent of Quiet Light - Where the Skyline Opens - Treblo.mp3",
+      "usable": true,
+      "duration": 192.6,
+      "mean_volume": -18.0,
+      "peak_volume": 0.0,
+      "energy": "mid",
+      "mood": "romantic",
+      "note": "mean -18.0 dB, peak 0.0 dB"
+    },
+    {
+      "file": "gladok - Space Magic Fly - Treblo.mp3",
+      "usable": true,
+      "duration": 213.072,
+      "mean_volume": -15.2,
+      "peak_volume": -1.8,
+      "energy": "loud",
+      "mood": "romantic",
+      "note": "mean -15.2 dB, peak -1.8 dB"
+    },
+    {
+      "file": "Hearts in Quiet Harmony - Ever Yours - Treblo.mp3",
+      "usable": true,
+      "duration": 95.16,
+      "mean_volume": -15.8,
+      "peak_volume": -0.0,
+      "energy": "loud",
+      "mood": "romantic",
+      "note": "mean -15.8 dB, peak -0.0 dB"
+    },
+    {
+      "file": "Hearts in Quiet Harmony - Infinite Embrace - Treblo.mp3",
+      "usable": true,
+      "duration": 95.16,
+      "mean_volume": -16.5,
+      "peak_volume": -0.2,
+      "energy": "mid",
+      "mood": "romantic",
+      "note": "mean -16.5 dB, peak -0.2 dB"
+    },
+    {
+      "file": "Letters in Lamplight - November Without You - Treblo.mp3",
+      "usable": true,
+      "duration": 163.752,
+      "mean_volume": -17.3,
+      "peak_volume": 0.0,
+      "energy": "mid",
+      "mood": "romantic",
+      "note": "mean -17.3 dB, peak 0.0 dB"
+    },
+    {
+      "file": "Letters in Lamplight - The Shape of Your Silence - Treblo.mp3",
+      "usable": true,
+      "duration": 196.512,
+      "mean_volume": -18.4,
+      "peak_volume": -0.1,
+      "energy": "mid",
+      "mood": "romantic",
+      "note": "mean -18.4 dB, peak -0.1 dB"
+    },
+    {
+      "file": "magneto720 - Ghanasian Quilt (Melt!) - Treblo.mp3",
+      "usable": true,
+      "duration": 185.784,
+      "mean_volume": -16.4,
+      "peak_volume": -0.0,
+      "energy": "mid",
+      "mood": "romantic",
+      "note": "mean -16.4 dB, peak -0.0 dB"
+    },
+    {
+      "file": "Rainfall Reunion - Every Step Back to You - Treblo.mp3",
+      "usable": true,
+      "duration": 192.408,
+      "mean_volume": -18.1,
+      "peak_volume": 0.0,
+      "energy": "mid",
+      "mood": "romantic",
+      "note": "mean -18.1 dB, peak 0.0 dB"
+    },
+    {
+      "file": "Rainfall Reunion - Held in the Downpour - Treblo.mp3",
+      "usable": true,
+      "duration": 118.704,
+      "mean_volume": -21.1,
+      "peak_volume": 0.0,
+      "energy": "mid",
+      "mood": "romantic",
+      "note": "mean -21.1 dB, peak 0.0 dB"
+    },
+    {
+      "file": "Still, With You - Every Quiet Vow - Treblo.mp3",
+      "usable": true,
+      "duration": 117.144,
+      "mean_volume": -18.2,
+      "peak_volume": 0.0,
+      "energy": "mid",
+      "mood": "romantic",
+      "note": "mean -18.2 dB, peak 0.0 dB"
+    },
+    {
+      "file": "Still, With You - Slow Hands of the Evening - Treblo.mp3",
+      "usable": true,
+      "duration": 137.064,
+      "mean_volume": -18.1,
+      "peak_volume": -0.2,
+      "energy": "mid",
+      "mood": "romantic",
+      "note": "mean -18.1 dB, peak -0.2 dB"
+    }
+  ]
+}

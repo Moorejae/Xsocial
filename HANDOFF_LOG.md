@@ -4,6 +4,128 @@ Newest first. Every change gets an entry, with evidence. See [AGENTS.md](AGENTS.
 
 ---
 
+## 2026-10-28 (video workflows built and proven for both channels: 50 s romance shorts, two voices, own songs)
+
+**Plane(s):** this folder, plus `169.58.212.7` (ffmpeg + the brand fonts installed, `/opt/x` created). No OAuth work
+— parked by the owner. Keys **not** rotated, per the owner's instruction.
+
+**Asked:** "build the workflows first for the jephtah and then for the emmanuel… both should be isolated from each
+other… use the same format just as forchi… the two workflow will not have the same voice and both will be
+relationship focused, romance and couple based scripts and each video should not be longer than 50sec… each
+workflow has their own videos and songs… we'll have to label and cut the scenes just like we did with forchi, the
+songs wont be cut but will be labelled and edited to match the script, the songs can be cut depending on the script
+so one in every video wont have the same sound… caption, use the same font style as used in rezmo and then the
+caption should be bold too… the gemini api keys should use the same water fall method as forchi."
+
+**Changed:**
+
+| File | Change | Why |
+| :--- | :--- | :--- |
+| `scripts/x_media.py` | **new.** Measures each clip (brightness, colour temperature, motion -> mood) and each song (duration, mean/peak level, energy) into `config/scenes|songs/<wf>.json`. `--vision` adds `subject`, `baked_text` and a verified mood from one batched frame pass | ForChi's clip manifest, but the labels are measured: 97 clips is where hand-labelling stops |
+| `scripts/x_ffmpeg.py` | **new.** One home for system-ffmpeg selection, UTF-8 stdout, `volumedetect` levels, and peak-gain + `alimiter` | three files were about to repeat the same three bugs |
+| `scripts/x_script.py` | **new.** Romance script writer (second person, concrete, no moral), plus `complete_ending` / `repair_ending` | see the truncated-ending incident below |
+| `scripts/x_voice.py` | **new.** Per-line TTS, WAV/PCM normalisation, `--audition` | narration must be one file per line so cuts and captions can be timed |
+| `scripts/x_render.py` | **new.** Cut plan, song window, captions, scrim, ffmpeg assembly, sidecar report | the Shorts assembly, at a 50 s cap |
+| `scripts/make_fonts.py` | **new.** Instantiates `Jost-Bold.ttf` (wght 700) and the Cormorant faces from REZMO's own variable fonts | "same font as rezmo" + bold, as a real bold rather than a synthetic one |
+| `scripts/make_assets.py` | **new.** Generates `assets/scrim_1080x1920.png` | white captions vanish over snow; committed so the renderer needs no PIL |
+| `scripts/bootstrap_vps.py` | **new.** Installs ffmpeg + fonts on `169.58.212.7`, then verifies filters and font count | that box had **no ffmpeg at all** |
+| `scripts/gemini_keys.py` | `GeminiPool.generate_audio()` — the same key rotation/cooldown/ladder applied to TTS, plus `sense_text` and `_audio_of` | the waterfall the owner asked for, extended to speech |
+| `config/workflows.json` | per-workflow `media_dir`, `songs_dir`, `output_dir`, `video`, `voice`, `caption`, `watermark`, `music` | both channels driven by data, not code |
+| `.gitignore` | media extensions and the two media folders, anchored so `web/site/jephter/` is **not** ignored | `jephtah/` held 240 MB of MP4 in a public repo |
+| `AGENTS.md` §12 | rewritten: independence table now covers voice and song use; the owner's video brief recorded verbatim in substance; file map and the one command per channel | |
+| `skills/x-video-pipeline`, `skills/x-voice-personas` | **new skills** | |
+
+### Renders produced
+
+```text
+out\jephter\jephter_20261029-001635.mp4   35.4 s  15332 KB  peak -1.4 dB   voice Leda
+  10 cuts — subjects couple=6 single=4, 0 on baked-text clips
+  song 'Letters in Lamplight - November Without You' @ 78.4 s (use #1)
+
+out\emmanuel\emmanuel_20261029-001254.mp4  41.0 s  20369 KB  peak -4.0 dB   voice Pulcherrima
+  12 cuts — subjects couple=9 single=3, 0 on baked-text clips
+  song 'Celestial Hearts - Midnight Silk' @ 32.5 s (use #1)
+```
+
+Both `under_cap: true`. Frames were extracted and **looked at**: jephter is a couple in a bookshop with a bold Jost
+caption over the scrim and a Cormorant watermark; emmanuel is a couple at a bathroom mirror, same treatment. That
+matters because a file that exists is not a file that is right.
+
+Isolation, checked rather than asserted:
+
+```text
+voices differ: Leda vs Pulcherrima
+song dirs:  jephtah\songs   vs   emmanuel\songs
+song start offsets: 78.4 s  vs  32.5 s
+gemini pool audit: 8/8 invariants hold (9/9, disjoint, balanced, nothing unowned)
+```
+
+### What measurement changed
+
+| Assumption | Measured reality |
+| :--- | :--- |
+| a style sentence steers Gemini TTS | **it is spoken aloud.** Transcribed back: *"speak slowly and softly I still remember…"*. A bracketed cue is stripped from the speech and still changes delivery: **-9.4 dB quieter**, slightly slower. That is the whisper |
+| any quiet voice is fine | ten voices on one line range from **-20.7 dB (Sulafat, not a whisper)** to **-29.5 dB (Leda)**; Despina is 1.49 words/s, which would make an 85-word script ~57 s and break the cap |
+| `volumedetect` output is available | it prints at INFO level; `-v error` made **every song read `energy: unknown`** — twice, because failures were then cached as labels |
+| the clip library is all couples | 33 couple / 19 single / 2 scenery (jephter), 31 / 7 / 5 (emmanuel) — and **8 jephter clips carry burned-in text** that collides with our captions |
+| TTS calls are cheap enough to re-run | after ~30 calls **every key in the jephter pool answered 429 on all three TTS models**. Renders are now content-addressed, so re-rendering costs 0 TTS calls |
+
+### The failure I shipped and then fixed, in one commit
+
+The first emmanuel render ended on **"You just stand together in."** — the ending guard caught the truncated tail,
+then *appended a full stop to it* and published it. Fixed: a short or dangling tail is now **dropped** so the previous
+sentence becomes the closing image, and the build refuses if no complete ending survives three attempts. Both real
+failures are now regression cases:
+
+```text
+"real failure 1"  ['You sit in the dark driveway.', 'The radio plays']
+   -> dropped ['The radio plays']            final_ok=True
+"real failure 2"  ['You stand by the stove.', 'You just stand together in.']
+   -> dropped ['You just stand together in.'] final_ok=True
+"good"            -> untouched, valid=True
+"unpunctuated but real" -> period added (not dropped), final_ok=True
+```
+
+### VPS
+
+```text
+python scripts\bootstrap_vps.py
+  installed: ffmpeg 6.1.1-3ubuntu5
+  /usr/bin/ffmpeg, /usr/bin/ffprobe
+  filters present: subtitles, ass, drawtext, amix, alimiter
+  fonts in /opt/x/fonts: 4      python 3.12.3      /dev/sda1 193G 2.7G 190G 2%
+```
+
+The brand fonts live in `/opt/x/fonts` rather than system-wide, so installing them cannot change any other tool that
+asks for "Jost".
+
+### Dead ends — do not repeat
+
+| Attempted | Result |
+| :--- | :--- |
+| ASR via `gemini-3.5-transcribe` | returned empty strings (and one network timeout). `gemini-3.8-flash` with the audio inline transcribed correctly |
+| style sentence as prose / as a second prompt part | both are **read aloud**; two-part was worst (9.6 s for an 11-word line) |
+| `[whispering]` as the cue | not spoken, but made the read **faster** (3.2 s vs 6.4 s). The cue's wording changes pacing |
+| variable TTF + `Bold: -1` in ASS | gives the default instance, i.e. synthetic bold. Instantiate wght 700 instead |
+| `loudnorm` | still not used; it dropped ~3 s of audio in this pipeline's predecessor |
+| trusting `config/songs/<wf>.json` after a failed probe | an unusable label was cached as if it were a hand-correction; only *successful* measurements are now reused |
+
+**Deprecated, cleaned:** nothing. Every file touched this session is listed in the table above.
+
+**Left open — in blocking order:**
+
+1. **TTS quota.** The jephter pool is currently out of TTS quota; emmanuel's render succeeded. Either wait for the
+   daily reset, add keys to the pool (`x-gemini-key-pool`), or point `voice.backend` at a clone. Nothing else blocks
+   a render.
+2. **A human listen.** The numbers say whispery (-29 dB, 0.33 quiet ratio) and the level is right; nobody has
+   actually listened to both voices end to end. That is the one check code cannot do.
+3. **The uploader** — `youtube_auth.py` gets the credential, nothing calls `videos.insert`. Then the schedule, then
+   the §8 ladder (systemd, watchdog, email, external heartbeat).
+4. **Media sync to the VPS** — `jephtah/` (240 MB) and `emmanuel/` (203 MB) are local only; `bootstrap_vps.py` makes
+   the box ready but does not copy the libraries.
+
+---
+
 ## 2026-10-27 (the pool claims checked, the token actually encrypted, the pages looked at)
 
 **Plane(s):** this folder + `169.58.212.7` (the pages were reopened in a browser to look at them). No new server

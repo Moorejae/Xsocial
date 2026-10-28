@@ -320,9 +320,92 @@ class GeminiPool:
 
         raise PoolExhausted(f"{self.workflow}: every model in the ladder failed; last: {last}")
 
+    def generate_audio(self, text: str, *, voice: str, style: str | None = None,
+                       models: tuple[str, ...] | None = None,
+                       total_timeout: float = 300.0) -> tuple[bytes, str]:
+        """Synthesise speech. Returns (audio bytes, mime type) — the caller unwraps PCM.
+
+        Same rotation as text: a key that is out of quota or refused goes on cooldown and the next one
+        is tried, and the model ladder is walked before giving up. Measured 2026-10-27 on these keys:
+        `gemini-3.8-flash-tts` returns `audio/wav`, `3.1-flash-tts-preview` returns
+        `audio/l16; rate=24000; channels=1`, and `2.5-flash-preview-tts` returns
+        `audio/L16;codec=pcm;rate=24000` — so the mime must be honoured, not assumed.
+        """
+        ladder = models or ("gemini-3.8-flash-tts", "gemini-3.1-flash-tts-preview",
+                            "gemini-2.5-flash-preview-tts")
+        # The style prompt is prepended as direction, which is how the TTS models are steered toward
+        # a whisper or a warm read: there is no separate style parameter.
+        prompt = f"{style.strip()}\n\n{sense_text(text)}" if style else sense_text(text)
+        payload = {
+            "contents": [{"role": "user", "parts": [{"text": prompt}]}],
+            "generationConfig": {
+                "responseModalities": ["AUDIO"],
+                "speechConfig": {"voiceConfig": {"prebuiltVoiceConfig": {"voiceName": voice}}},
+            },
+        }
+
+        last = "no attempt made"
+        n = 0
+        started = time.time()
+        for model in ladder:
+            for attempt in range(self.attempts_per_model):
+                remaining = total_timeout - (time.time() - started)
+                if remaining <= 15:
+                    raise PoolExhausted(f"{self.workflow}: TTS budget exhausted after {model}; last: {last}")
+                keys = self._ready_keys()
+                key = keys[n % len(keys)]
+                n += 1
+                kid = key_id(key)[:4]
+                status, body = _request(f"{BASE_URL}/models/{model}:generateContent", key, payload,
+                                        timeout=min(120.0, remaining))
+                if status == 200 and isinstance(body, dict):
+                    data, mime = _audio_of(body)
+                    if data:
+                        return data, mime
+                    last = f"{model} kid={kid} 200 but no audio part"
+                    break  # a shape problem will not fix itself on the next key; try the next model
+                if status in ROTATE_STATUSES:
+                    self._cooldown[key_id(key)] = time.time() + self.cooldown_seconds * (attempt + 1)
+                    last = f"{model} kid={kid} HTTP {status} -> key on cooldown"
+                elif status in FATAL_STATUSES:
+                    raise GeminiError(f"{self.workflow}: TTS {model} rejected (HTTP {status})")
+                else:
+                    last = f"{model} kid={kid} HTTP {status}"
+                if attempt < self.attempts_per_model - 1:
+                    delay = self.base_delay * (2 ** attempt) + random.uniform(0, 0.5)
+                    log(f"[{self.workflow}] tts {last}; retrying in {delay:.1f}s")
+                    time.sleep(delay)
+            log(f"[{self.workflow}] tts {model} unavailable, next model in the TTS ladder")
+        raise PoolExhausted(f"{self.workflow}: every TTS model failed; last: {last}")
+
 
 class GeminiError(RuntimeError):
     pass
+
+
+def sense_text(text: str) -> str:
+    """Strip anything that would be *read aloud* as stage direction.
+
+    The TTS models narrate the whole prompt, so a stray markdown symbol or a parenthetical becomes
+    part of the performance. Only the words that should be spoken are passed through.
+    """
+    return " ".join(text.replace("*", " ").replace("_", " ").replace("#", " ").split())
+
+
+def _audio_of(body: dict) -> tuple[bytes, str]:
+    """Pull the first inline audio part out of a generateContent response."""
+    for cand in body.get("candidates") or []:
+        for part in ((cand.get("content") or {}).get("parts")) or []:
+            inline = part.get("inlineData") or part.get("inline_data")
+            if not inline:
+                continue
+            mime = inline.get("mimeType") or inline.get("mime_type") or ""
+            data = inline.get("data") or ""
+            if not data:
+                continue
+            import base64 as _b64
+            return _b64.b64decode(data), mime
+    return b"", ""
 
 
 def _text_of(body: dict) -> tuple[str, str]:

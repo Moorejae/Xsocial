@@ -18,6 +18,50 @@
       "home": "/jephter/",
       "privacy": "/jephter/privacy.html",
       "terms": "/jephter/terms.html"
+    },
+    "media_dir": "jephtah",
+    "songs_dir": "jephtah/songs",
+    "output_dir": "out/jephter",
+    "video": {
+      "max_seconds": 50,
+      "width": 1080,
+      "height": 1920,
+      "fps": 30,
+      "target_words": 78,
+      "max_words": 92,
+      "phrases": 6,
+      "phrase_gap": 0.34,
+      "tail": 1.5,
+      "cut_seconds": [2.6, 4.8]
+    },
+    "voice": {
+      "backend": "gemini",
+      "model": "gemini-3.8-flash-tts",
+      "name": "Leda",
+      "cue": "[speaking slowly and softly, almost in a whisper]",
+      "audition_note": "Chosen 2026-10-27 from 10 candidates on one 17-word line: Leda is the quietest read (-29.5 dB mean) at 2.66 words/s. Callirrhoe (-23.9 dB) and Sulafat (-20.7 dB) are noticeably more projected. Despina is slower (1.49 w/s) but too slow: an 85-word script would take ~57 s and break the 50 s cap."
+    },
+    "caption": {
+      "font": "fonts/Jost-Bold.ttf",
+      "family": "Jost",
+      "size": 82,
+      "bold": true,
+      "words_per_caption": 3,
+      "colour": "&H00FFFFFF",
+      "outline": 4,
+      "shadow": 2,
+      "margin_v": 420
+    },
+    "watermark": {
+      "text": "Jephter",
+      "font": "fonts/CormorantGaramond-SemiBold.ttf",
+      "size": 34,
+      "opacity": 0.55
+    },
+    "music": {
+      "gain": 0.20,
+      "fade_in": 1.4,
+      "fade_out": 2.2
     }
   },
   "emmanuel": {
@@ -38,6 +82,50 @@
       "home": "/emmanuel/",
       "privacy": "/emmanuel/privacy.html",
       "terms": "/emmanuel/terms.html"
+    },
+    "media_dir": "emmanuel",
+    "songs_dir": "emmanuel/songs",
+    "output_dir": "out/emmanuel",
+    "video": {
+      "max_seconds": 50,
+      "width": 1080,
+      "height": 1920,
+      "fps": 30,
+      "target_words": 78,
+      "max_words": 92,
+      "phrases": 6,
+      "phrase_gap": 0.34,
+      "tail": 1.5,
+      "cut_seconds": [2.6, 4.8]
+    },
+    "voice": {
+      "backend": "gemini",
+      "model": "gemini-3.8-flash-tts",
+      "name": "Pulcherrima",
+      "cue": "[speaking slowly and softly, almost in a whisper]",
+      "audition_note": "Chosen 2026-10-27: the most breath in the audition (0.334 quiet ratio) and the second quietest mean level (-29.1 dB) at 2.51 words/s. Distinct from Leda, which is steadier and has far fewer pauses, so the two channels do not sound like the same narrator."
+    },
+    "caption": {
+      "font": "fonts/Jost-Bold.ttf",
+      "family": "Jost",
+      "size": 82,
+      "bold": true,
+      "words_per_caption": 3,
+      "colour": "&H00FFFFFF",
+      "outline": 4,
+      "shadow": 2,
+      "margin_v": 420
+    },
+    "watermark": {
+      "text": "Emmanuel",
+      "font": "fonts/CormorantGaramond-SemiBold.ttf",
+      "size": 34,
+      "opacity": 0.55
+    },
+    "music": {
+      "gain": 0.20,
+      "fade_in": 1.4,
+      "fade_out": 2.2
     }
   }
 }

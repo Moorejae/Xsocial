@@ -1,0 +1,107 @@
+{
+  "workflow": "emmanuel",
+  "songs_dir": "emmanuel/songs",
+  "source": "scripts/x_media.py --label (measured)",
+  "songs": [
+    {
+      "file": "Celestial Hearts - Dreamlike Moments - Treblo.mp3",
+      "usable": true,
+      "duration": 95.16,
+      "mean_volume": -16.0,
+      "peak_volume": 0.0,
+      "energy": "loud",
+      "mood": "romantic",
+      "note": "mean -16.0 dB, peak 0.0 dB"
+    },
+    {
+      "file": "Celestial Hearts - Eyes Meet in the Dream - Treblo.mp3",
+      "usable": true,
+      "duration": 95.16,
+      "mean_volume": -16.5,
+      "peak_volume": -0.3,
+      "energy": "mid",
+      "mood": "romantic",
+      "note": "mean -16.5 dB, peak -0.3 dB"
+    },
+    {
+      "file": "Celestial Hearts - First Glance Forever - Treblo.mp3",
+      "usable": true,
+      "duration": 95.16,
+      "mean_volume": -17.9,
+      "peak_volume": 0.0,
+      "energy": "mid",
+      "mood": "romantic",
+      "note": "mean -17.9 dB, peak 0.0 dB"
+    },
+    {
+      "file": "Celestial Hearts - Held In Your Light - Treblo.mp3",
+      "usable": true,
+      "duration": 95.16,
+      "mean_volume": -17.0,
+      "peak_volume": -0.6,
+      "energy": "mid",
+      "mood": "romantic",
+      "note": "mean -17.0 dB, peak -0.6 dB"
+    },
+    {
+      "file": "Celestial Hearts - Infinity Embrace - Treblo.mp3",
+      "usable": true,
+      "duration": 95.16,
+      "mean_volume": -18.1,
+      "peak_volume": 0.0,
+      "energy": "mid",
+      "mood": "romantic",
+      "note": "mean -18.1 dB, peak 0.0 dB"
+    },
+    {
+      "file": "Celestial Hearts - Magnetic Moon - Treblo.mp3",
+      "usable": true,
+      "duration": 95.16,
+      "mean_volume": -15.5,
+      "peak_volume": 0.0,
+      "energy": "loud",
+      "mood": "romantic",
+      "note": "mean -15.5 dB, peak 0.0 dB"
+    },
+    {
+      "file": "Celestial Hearts - Midnight Silk - Treblo.mp3",
+      "usable": true,
+      "duration": 95.16,
+      "mean_volume": -15.7,
+      "peak_volume": 0.0,
+      "energy": "loud",
+      "mood": "romantic",
+      "note": "mean -15.7 dB, peak 0.0 dB"
+    },
+    {
+      "file": "Celestial Hearts - Miracle in Bloom - Treblo.mp3",
+      "usable": true,
+      "duration": 95.16,
+      "mean_volume": -15.4,
+      "peak_volume": 0.0,
+      "energy": "loud",
+      "mood": "romantic",
+      "note": "mean -15.4 dB, peak 0.0 dB"
+    },
+    {
+      "file": "Celestial Hearts - Starlit Solace - Treblo.mp3",
+      "usable": true,
+      "duration": 95.16,
+      "mean_volume": -17.5,
+      "peak_volume": 0.0,
+      "energy": "mid",
+      "mood": "romantic",
+      "note": "mean -17.5 dB, peak 0.0 dB"
+    },
+    {
+      "file": "daftplanet - Muckross Girl - Treblo.ogg",
+      "usable": true,
+      "duration": 95.115,
+      "mean_volume": -17.6,
+      "peak_volume": -0.7,
+      "energy": "mid",
+      "mood": "romantic",
+      "note": "mean -17.6 dB, peak -0.7 dB"
+    }
+  ]
+}
