@@ -513,7 +513,9 @@
       "mood": "tender",
       "note": "luma 58, warmth -1, motion 20.7",
       "subject": "couple",
-      "baked_text": false
+      "baked_text": false,
+      "content": "720:876:0:202",
+      "content_coverage": 0.684
     },
     {
       "file": "Rakesh.mp4",
@@ -529,7 +531,9 @@
       "mood": "calm",
       "note": "luma 30, warmth +15, motion 1.5",
       "subject": "couple",
-      "baked_text": true
+      "baked_text": true,
+      "content": "720:898:0:192",
+      "content_coverage": 0.702
     },
     {
       "file": "Rents.mp4",
@@ -641,7 +645,9 @@
       "mood": "tender",
       "note": "luma 47, warmth +26, motion 3.1",
       "subject": "couple",
-      "baked_text": false
+      "baked_text": false,
+      "content": "720:800:0:240",
+      "content_coverage": 0.625
     },
     {
       "file": "Wed_Vibes.mp4",
@@ -673,7 +679,9 @@
       "mood": "joyful",
       "note": "luma 34, warmth -3, motion 1.3",
       "subject": "couple",
-      "baked_text": true
+      "baked_text": true,
+      "content": "486:610:0:126",
+      "content_coverage": 0.706
     },
     {
       "file": "ʀᴀᴠɪ.mp4",

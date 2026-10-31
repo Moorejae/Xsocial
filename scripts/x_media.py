@@ -37,6 +37,7 @@ import os
 import shutil
 import subprocess
 import sys
+from collections import Counter
 from datetime import date
 from pathlib import Path
 
@@ -176,6 +177,10 @@ def classify_clip(path: Path) -> dict:
     entry["color_temp"] = "warm" if warmth > 12 else ("cool" if warmth < -12 else "neutral")
     entry["motion"] = "low" if diff < 2.0 else ("mid" if diff < 6.0 else "high")
     entry["mood"] = derive_mood(entry["brightness"], entry["color_temp"], entry["motion"])
+    content = detect_content_rect(path)
+    if content:
+        entry["content"] = content["rect"]
+        entry["content_coverage"] = content["coverage"]
     entry["usable"] = True
     entry["note"] = f"luma {mean_luma:.0f}, warmth {warmth:+.0f}, motion {diff:.1f}"
     return entry
@@ -329,6 +334,76 @@ def _vision_call(pool, parts: list[dict]) -> str:
     raise RuntimeError(last)
 
 
+def detect_content_rect(path: Path) -> dict:
+    """Find the real picture inside a clip that has baked-in black bars.
+
+    Measured 2026-10-31: 6 of the 97 clips are letterboxed inside their own frame — for example a
+    720x1280 file whose content is only `720:876:0:202`, i.e. 68 % of the frame and black for the
+    rest. Scaling that to 1080x1920 keeps the bars, so the video plays with a black band top and
+    bottom and looks amateur. `cropdetect` gives the content rectangle; the renderer crops to it
+    before scaling.
+
+    Returns `{"rect": "w:h:x:y", "coverage": 0..1}` or `{}` when the clip fills its frame.
+    """
+    dur = probe(path).get("duration", 0)
+    start = min(1.0, max(0.0, dur * 0.1))
+    r = subprocess.run(
+        [ffmpeg(), "-hide_banner", "-nostats", "-ss", f"{start:.2f}", "-i", str(path), "-t", "2",
+         "-vf", "cropdetect=24:2:0", "-f", "null", "-"],
+        capture_output=True, text=True, errors="ignore",
+    )
+    rects = [line.split("crop=")[1].split()[0]
+             for line in (r.stderr or "").splitlines() if "crop=" in line]
+    if not rects:
+        return {}
+    rect = Counter(rects).most_common(1)[0][0]
+    parts = rect.split(":")
+    if len(parts) < 2:
+        return {}
+    try:
+        cw, ch = int(parts[0]), int(parts[1])
+    except ValueError:
+        return {}
+    meta = probe(path)
+    w, h = meta.get("width") or 0, meta.get("height") or 0
+    if not (w and h):
+        return {}
+    coverage = (cw * ch) / (w * h)
+    if coverage >= 0.90:            # a few pixels of edge is not a letterbox
+        return {}
+    return {"rect": rect, "coverage": round(coverage, 3)}
+
+
+def backfill_content(workflow: str) -> int:
+    """Add the content rectangle to an already-labelled pool, without re-measuring everything.
+
+    `--label` measures brightness, temperature and motion from sampled frames, which is the slow
+    part. When only a new field is wanted (this one), re-running that for 54 clips is wasted work.
+    """
+    scenes_path = ROOT / "config" / "scenes" / f"{workflow}.json"
+    data = json.loads(scenes_path.read_text(encoding="utf-8"))
+    wf = json.loads(CONFIG.read_text(encoding="utf-8"))[workflow]
+    clips_dir = ROOT / wf["media_dir"]
+
+    fixed = 0
+    for c in data["clips"]:
+        if not c.get("usable"):
+            continue
+        content = detect_content_rect(clips_dir / c["file"])
+        if content:
+            c["content"] = content["rect"]
+            c["content_coverage"] = content["coverage"]
+            fixed += 1
+            print(f"  {c['file'][:44]:<44} content {content['rect']:<14} "
+                  f"{content['coverage']:.0%} of the frame", flush=True)
+        else:
+            c.pop("content", None)
+            c.pop("content_coverage", None)
+    scenes_path.write_text(json.dumps(data, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    print(f"{workflow}: {fixed} clip(s) letterboxed; the renderer crops to their content")
+    return 0
+
+
 def classify_song(path: Path) -> dict:
     meta = probe(path)
     entry = {
@@ -450,12 +525,16 @@ def main() -> int:
     ap.add_argument("--label", metavar="WORKFLOW")
     ap.add_argument("--vision", metavar="WORKFLOW",
                     help="add subject / baked_text / verified mood to a labelled pool")
+    ap.add_argument("--bars", metavar="WORKFLOW",
+                    help="detect baked-in letterbox/pillarbox bars and record the content rect")
     ap.add_argument("--force", action="store_true", help="re-measure even if labelled before")
     a = ap.parse_args()
     if a.vision:
         return label_subjects(a.vision)
+    if a.bars:
+        return backfill_content(a.bars)
     if not a.label:
-        ap.error("--label WORKFLOW or --vision WORKFLOW is required")
+        ap.error("--label WORKFLOW, --vision WORKFLOW or --bars WORKFLOW is required")
     return label(a.label, a.force)
 
 

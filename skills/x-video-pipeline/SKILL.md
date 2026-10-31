@@ -26,6 +26,7 @@ the other's quota because the pools are disjoint.
 | :--- | :--- | :--- | :--- |
 | 0 | **Label the libraries** | `x_media.py --label <wf>` | `config/scenes/<wf>.json`, `config/songs/<wf>.json` (committed) |
 | 0b | **Vision labels** (optional, once) | `x_media.py --vision <wf>` | adds `subject`, `baked_text`, verified `mood` |
+| 0c | **Letterbox rects** (once, or after adding clips) | `x_media.py --bars <wf>` | adds `content` / `content_coverage` |
 | 1 | **Script** | `x_script.py` / `x_render.py` | 5-6 romance lines, ≤92 words |
 | 2 | **Voice** | `x_voice.py` | one WAV per line, content-addressed cache |
 | 3 | **Cut plan** | `x_render.pick_cuts` | one clip per cut, ~2.6-4.8 s each |
@@ -122,6 +123,9 @@ is the replacement and is what runs here.
 
 | Symptom | Cause | Fix |
 | :--- | :--- | :--- |
+| Black bars top and bottom inside the picture | the **source clip** is letterboxed, so the bars survive `scale`+`crop` | `x_media.py --bars <wf>` records the content rect via `cropdetect`; the renderer crops to it before scaling. 6 of 97 clips were affected |
+| A caption reads *"and gather the"* | fixed 3-word chunks strand a function word | `chunk_words` takes one more word when a chunk would end on `the`/`and`/`of` |
+| A "letterboxed" clip still shows bars | its `content` rect was never measured (added after labelling) | run `--bars <wf>`; it backfills without re-measuring everything |
 | Final line is a fragment: *"The radio plays"* / *"You just stand together in."* | the model truncated, and the first version of the guard **appended a full stop to the truncation** | `complete_ending` + `repair_ending` in `x_script.py`: a short or dangling tail is **dropped**, the previous sentence becomes the close; refuses to publish if no complete ending survives 3 attempts |
 | Captions invisible on bright shots | white text over snow/sky | the scrim; keep it composited *under* the subtitles |
 | Two captions fighting | a stock clip with burned-in text | `--vision` sets `baked_text`; the picker avoids those clips |

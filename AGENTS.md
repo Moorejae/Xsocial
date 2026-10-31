@@ -128,6 +128,7 @@ Skills learned *in this project* go in `X\skills\<name>\SKILL.md`, same format a
 | **`x-google-console-oauth`** | Creating or fixing a client's OAuth client, consent-screen rejection, uploads that die after a week, or moving the privacy/terms pages to a real domain. |
 | **`x-video-pipeline`** | Producing a short for either channel; a render with no audio, no captions, the wrong font or the wrong length; a song or clip that keeps recurring. |
 | **`x-voice-personas`** | A video that sounds wrong, fast, loud or not whispery; choosing a voice; keeping the two channels' voices distinct; TTS mime or 429 problems. |
+| **`x-test-video`** | The owner asks for a video, a test video, a sample or a re-render. It carries the delivery convention — `--deliver` puts the file and its report in `C:\Users\hp\Downloads`. |
 
 ---
 
@@ -381,13 +382,15 @@ Load `x-gemini-key-pool` before touching keys, `x-google-console-oauth` before t
 ### One command, per channel
 
 ```powershell
-python scripts\x_render.py --workflow jephter      # script -> voice -> cuts -> song -> 50s mp4
-python scripts\x_render.py --workflow emmanuel
+python scripts\x_render.py --workflow jephter  --deliver   # script -> voice -> cuts -> song -> mp4
+python scripts\x_render.py --workflow emmanuel --deliver
 ```
 
-Each writes `out/<workflow>/<name>.mp4` plus a `.json` sidecar (phrases, per-line durations, every clip with its
-mood/subject, the song and its offset, levels, `under_cap`). The sidecar is the evidence; read it, and look at a
-frame, because a file that exists is not a file that is right.
+`--deliver` copies the result to `C:\Users\hp\Downloads\<channel>_<stamp>_<seconds>s.mp4` **with its report beside
+it** — that is the deliverable, and it is the owner's convention. Each build also writes `out/<workflow>/<name>.json`
+(phrases, per-line durations, every clip with its mood/subject/letterbox rect, the song and its offset, levels,
+`under_cap`). The sidecar is the evidence; read it, and look at a frame, because a file that exists is not a file
+that is right.
 
 ### Two facts that decide the console setup
 

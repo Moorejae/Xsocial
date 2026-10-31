@@ -174,6 +174,7 @@ def pick_cuts(workflow: str, phrases: list[str], seg_durs: list[float], wf: dict
                 "color_temp": pick.get("color_temp"),
                 "subject": pick.get("subject"),
                 "baked_text": pick.get("baked_text"),
+                "content": pick.get("content"),
             })
 
     usage["recent_clips"] = ([c for c in usage.get("recent_clips", []) if c not in {p["file"] for p in plan}]
@@ -287,6 +288,32 @@ def _ass_text(s: str) -> str:
     return s.replace("{", "(").replace("}", ")").replace("\\", "/")
 
 
+FUNCTION_WORDS = {"the", "a", "an", "and", "but", "to", "of", "in", "on", "at", "for", "with",
+                  "your", "their", "my", "his", "her", "that", "this", "it", "as", "from", "by"}
+
+
+def chunk_words(words: list[dict], per: int) -> list[list[dict]]:
+    """Split a phrase into caption chunks that do not strand a function word at the end.
+
+    Fixed-size chunks produce lines like *"and gather the"* — measured on the first emmanuel test
+    render, and it reads as a mistake on a still frame. When a chunk would end on `the`/`and`/`of`
+    and the phrase continues, take one more word so the chunk ends on something that carries
+    meaning. The chunk then runs one word long, which is far less noticeable than a dangling article.
+    """
+    chunks: list[list[dict]] = []
+    i = 0
+    while i < len(words):
+        chunk = words[i:i + per]
+        n = len(chunk)
+        if (i + n < len(words) and n > 1
+                and chunk[-1]["word"].strip(".,!?;:").lower() in FUNCTION_WORDS):
+            n += 1
+            chunk = words[i:i + n]
+        chunks.append(chunk)
+        i += n
+    return chunks
+
+
 def build_ass(phrases: list[str], starts: list[float], durs: list[float], cap: dict,
               out_path: Path) -> Path:
     """Word-chunk captions in the workflow's face.
@@ -319,8 +346,7 @@ def build_ass(phrases: list[str], starts: list[float], durs: list[float], cap: d
     events = []
     for phrase, start, dur in zip(phrases, starts, durs):
         words = word_timings(phrase, start, dur)
-        for i in range(0, len(words), per):
-            chunk = words[i:i + per]
+        for chunk in chunk_words(words, per):
             if not chunk:
                 continue
             text = " ".join(w["word"] for w in chunk)
@@ -402,10 +428,17 @@ def render(workflow: str, phrases: list[str], voice_wavs: list[Path], wf: dict,
     seg_files: list[Path] = []
     for i, cut in enumerate(cuts):
         seg = work / f"v{i:03d}.mp4"
+        # A letterboxed source keeps its black bars through scale+crop, because the bars are part
+        # of the picture. Crop to the detected content rectangle first, then fill the frame.
+        pre = ""
+        rect = cut.get("content")
+        if rect:
+            cw, ch, cx, cy = (int(v) for v in rect.split(":"))
+            pre = f"crop={cw}:{ch}:{cx}:{cy},"
         r = xf.run([
             xf.ffmpeg(), "-y", "-stream_loop", "-1", "-i", cut["path"],
             "-t", f"{cut['seconds']:.3f}",
-            "-vf", f"scale={width}:{height}:force_original_aspect_ratio=increase,"
+            "-vf", f"{pre}scale={width}:{height}:force_original_aspect_ratio=increase,"
                    f"crop={width}:{height},fps={fps},format=yuv420p,setsar=1",
             "-an", "-c:v", "libx264", "-crf", "18", "-preset", "veryfast", str(seg),
         ])
@@ -519,7 +552,7 @@ def render(workflow: str, phrases: list[str], voice_wavs: list[Path], wf: dict,
         "dropped_phrases": dropped,
         "voice": wf.get("voice", {}).get("name"),
         "cuts": [{k: c[k] for k in ("phrase", "cut", "seconds", "file", "mood", "color_temp",
-                                    "subject", "baked_text")} for c in cuts],
+                                    "subject", "baked_text", "content")} for c in cuts],
         "song": song,
         "mean_db": lv["mean_db"],
         "peak_db": lv["peak_db"],
@@ -538,6 +571,28 @@ def render(workflow: str, phrases: list[str], voice_wavs: list[Path], wf: dict,
     return report
 
 
+def deliver_to_downloads(report: dict, wf: dict) -> Path:
+    """Copy a finished video to the owner's Downloads folder under a name that reads on sight.
+
+    The owner asks for the file by looking in Downloads, not by hunting through `out/`. Naming it
+    `<channel>_<date>_<seconds>s.mp4` means two files side by side are distinguishable without
+    opening either, and the sidecar `.json` travels with it so a report of what went into the video
+    is never left behind in the project folder.
+    """
+    downloads = Path.home() / "Downloads"
+    if not downloads.is_dir():
+        raise SystemExit(f"Downloads folder not found at {downloads}")
+    src = ROOT / report["file"]
+    stamp = datetime.now().strftime("%Y%m%d-%H%M")
+    channel = wf.get("channel_name", report["workflow"]).lower().replace(" ", "-")
+    dst = downloads / f"{channel}_{stamp}_{report['duration_s']:.0f}s.mp4"
+    shutil.copy2(src, dst)
+    side = src.with_suffix(".json")
+    if side.exists():
+        shutil.copy2(side, dst.with_suffix(".json"))
+    return dst
+
+
 def main() -> int:
     xf.utf8_stdout()
     ap = argparse.ArgumentParser(description="Render one vertical short for one X workflow")
@@ -546,6 +601,8 @@ def main() -> int:
     ap.add_argument("--seed", type=int, default=None)
     ap.add_argument("--out-name")
     ap.add_argument("--keep-work", action="store_true")
+    ap.add_argument("--deliver", action="store_true",
+                    help="also copy the result to the Downloads folder with the report beside it")
     a = ap.parse_args()
 
     wf = load_workflow(a.workflow)
@@ -592,6 +649,9 @@ def main() -> int:
     report = render(a.workflow, phrases, wavs, wf, out_name=a.out_name, seed=a.seed,
                     keep_work=a.keep_work)
     print(f"  report: {report['file'].replace('.mp4', '.json')}")
+    if a.deliver:
+        dst = deliver_to_downloads(report, wf)
+        print(f"  delivered: {dst}")
     return 0 if report["under_cap"] else 2
 
 

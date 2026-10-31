@@ -33,7 +33,9 @@
       "mood": "tender",
       "note": "luma 17, warmth +5, motion 0.1",
       "subject": "couple",
-      "baked_text": false
+      "baked_text": false,
+      "content": "580:996:102:270",
+      "content_coverage": 0.627
     },
     {
       "file": "AlayJas_알라야스_이현.mp4",
@@ -593,7 +595,9 @@
       "mood": "calm",
       "note": "luma 22, warmth -8, motion 0.1",
       "subject": "couple",
-      "baked_text": false
+      "baked_text": false,
+      "content": "720:1118:0:0",
+      "content_coverage": 0.873
     },
     {
       "file": "✨Cristal✨.mp4",

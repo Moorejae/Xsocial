@@ -4,6 +4,65 @@ Newest first. Every change gets an entry, with evidence. See [AGENTS.md](AGENTS.
 
 ---
 
+## 2026-10-31 (two test videos delivered to Downloads; letterbox and caption-chunk defects found by looking)
+
+**Plane(s):** this folder only. No server change, no OAuth work, keys still not rotated (owner's instruction).
+
+**Asked:** "give me a video test saved to my download folder, pls add this as a skill in the skill folder so i wont
+have to repeat my self again."
+
+**Changed:**
+
+| File | Change | Why |
+| :--- | :--- | :--- |
+| `scripts/x_render.py` | `--deliver`: copies the finished mp4 **and its sidecar report** to `C:\Users\hp\Downloads\<channel>_<stamp>_<s>s.mp4` | the owner looks in Downloads, not in `out/`. Naming carries the length so two files are distinguishable without opening them |
+| `scripts/x_render.py` | `pick_cuts` carries `content`; the segment filter crops to it **before** scaling | a letterboxed source keeps its bars through scale+crop |
+| `scripts/x_render.py` | `chunk_words()` | fixed 3-word chunks stranded function words — the frame read *"and gather the"* |
+| `scripts/x_media.py` | `detect_content_rect()` via `cropdetect`, stored as `content`/`content_coverage`; new `--bars <wf>` backfills a labelled pool | measuring 54 clips again just to add one field is wasted work |
+| `skills/x-test-video/SKILL.md` | **new skill** — the delivery convention, the command, the checks, the pitfalls | so this request never has to be repeated |
+| `AGENTS.md` | §4 skill table + §12 "one command per channel" now names `--deliver` and the Downloads path | |
+| `skills/x-video-pipeline` | stages table gained `--bars`; failure table gained the letterbox and chunking rows | |
+
+### Delivered
+
+```text
+C:\Users\hp\Downloads\jephter_20261031-1144_37s.mp4    16.6 MB   37.4 s   11 cuts   voice Leda
+C:\Users\hp\Downloads\emmanuel_20261031-1146_36s.mp4   17.3 MB   36.1 s   10 cuts   voice Pulcherrima
+  (+ a .json report beside each)
+```
+
+Both underneath the 50 s cap, both verified with ffprobe (`h264 / 1080x1920 / aac`), and both **looked at** — a frame
+from the middle of each, not the first frame.
+
+### Two defects found by looking, not by rendering
+
+1. **Letterboxed sources.** The first jephter test had black bands top and bottom. Measured with `cropdetect`:
+   **6 of 97 clips** are letterboxed inside their own frame — e.g. `Pookie_edits.mp4` is 720×1280 but its content is
+   `720:876:0:202`, **68 %** of the frame; `Vikas_Gangwar.mp4` is **62 %**. `scale`+`crop` cannot fix that because
+   the bars are part of the picture. Now measured once and cropped per segment; emmanuel's re-render used one of the
+   affected clips (`ᗩEᔕTᕼETIᑕ_ᐯIᗷE𓂃…`, content `720:1118:0:0`) and came back full-bleed.
+2. **Caption chunks stranded function words.** A frame read *"and gather the"*. `chunk_words` now extends a chunk by
+   one word rather than end on `the`/`and`/`of`. Verified on the exact failing line:
+   `"They step into / the small space / between your knees / and gather the hem / of your shirt."`
+
+### Zero-cost re-render, used for real
+
+Both videos were re-rendered after those fixes **without spending TTS quota**: the script was extracted from the
+previous sidecar into `out/<wf>/scripts/reuse.json` and passed as `--phrases-file`, so every phrase hit the
+content-addressed voice cache (`(cached)` on every line). This is the documented way to iterate on a finished video.
+
+### Dead ends
+
+| Attempted | Result |
+| :--- | :--- |
+| `cropdetect` parsed with a 2-way unpack | `ValueError: too many values` — it returns `w:h:x:y`, four fields |
+| printing emmanuel's clip filenames to a cp1252 console | `UnicodeEncodeError` on `✮`; `xf.utf8_stdout()` is required in every ad-hoc probe too, not only in the scripts |
+
+**Still open:** unchanged — TTS quota is the practical limit (it reset on 2026-10-31 and both pools worked); nobody has
+listened to the two voices end to end; the uploader, the schedule and the §8 supervision ladder are not built.
+
+---
+
 ## 2026-10-28 (video workflows built and proven for both channels: 50 s romance shorts, two voices, own songs)
 
 **Plane(s):** this folder, plus `169.58.212.7` (ffmpeg + the brand fonts installed, `/opt/x` created). No OAuth work
