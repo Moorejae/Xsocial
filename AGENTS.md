@@ -366,6 +366,7 @@ channel's trouble never becomes the other's.
 | Script shape | jephter **confesses** (first person, absent "you", claim → contradiction → turn → quiet want). emmanuel **instructs** (imperative, concrete commands, → a named standard). Neither describes a physical scene: they talk, they do not stage |
 | Song used | separate libraries; the same track never repeats within 3 videos, and the excerpt starts somewhere different every time |
 | Schedule | separate: **produce 07:00 / 14:00, post 10:00 / 17:00** Africa/Lagos, 2 videos/day each, with per-channel jitter so the two never post in the same minute |
+| Re-authorisation mail | goes to the **channel's own inbox** — `channel_email` in `config/workflows.json` (jephter → chineduagu598@gmail.com, emmanuel → steadfast7878@gmail.com) — on **day 4 and day 5** of the refresh token's 7-day life, never before 09:00. `contact_email` stays the operator's. See `x-watchdog` |
 
 ### The video brief, as the owner set it
 
