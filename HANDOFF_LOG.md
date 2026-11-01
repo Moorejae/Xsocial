@@ -4,6 +4,61 @@ Newest first. Every change gets an entry, with evidence. See [AGENTS.md](AGENTS.
 
 ---
 
+## 2026-11-01 (ForChi Shorts now written in the two X formats; two video proofs delivered)
+
+**Plane(s):** this folder, and `C:\Users\hp\forchi` (its working tree, **nothing committed there**).
+
+**Asked:** "i need to use both writing format used in jephtah and emmanuel to be the writing format for forchi's
+short videos... i also need a video proof."
+
+**Changed:**
+
+| File | Change | Why |
+| :--- | :--- | :--- |
+| ForChi `tools/_video_script.py` | `X_FORMATS` = `confession` + `devotion`, `SHARED_RULES`, `next_x_format(history)`; `generate_script()` selects `X_FORMATS.get(style, PERSONA_PROMPT)`; `generate_script_checked()` **rotates** when no style is given; the expand-to-length round no longer tells an X-format script to use the Victor aphorism formula | Shorts alternate between jephter's confessional shape and emmanuel's instructional one. The Victor persona is still reachable as `style="victor"` |
+| ForChi `tools/_video_voice.py` | `render_gemini()` now walks **every key** before dropping to the next model, and treats `HTTP 402` like a 429 (key cooled 300 s) | a render died at phrase 7 of 7 with `HTTP 402 -> next model` three times while 11 keys sat unused |
+| `scripts/forchi_proof.py` | **new.** Runs ForChi's chain end to end (script → voice → clips → assemble), verifies, delivers to Downloads, writes `out/forchi_proof.json` | the owner asked for a proof, and this makes it repeatable |
+| `skills/x-forchi-bridge` | describes the third touchpoint and the three traps below | |
+
+### Delivered proofs
+
+```text
+C:\Users\hp\Downloads\forchi_confession_20261101-1014_38s.mp4   37.5 s  1080x1920  h264/aac  black=0
+C:\Users\hp\Downloads\forchi_devotion_20261101-1016_48s.mp4     48.1 s  1080x1920  h264/aac  black=0
+```
+
+Written by ForChi's own writer, voiced by its own voice module (Leda via the new `gemini` backend), cut by its own
+stitcher from its own 211-clip pool, assembled by its own assembler — with its own Ink Free captions and
+"Victor Moore" watermark. Only the writing format changed.
+
+Confession sample: *"I told myself I was completely done letting anyone new ever in. / But some nights, your voice
+stays lingering long after the call finally ends. / … Until one day, the emotional walls just stopped working. / And
+I fully realised I was already completely yours. / I just want to stay close."*
+
+Devotion sample: *"Put your phone down when they speak. Look at their face. Listen past the words to what they are
+actually carrying. / … Stay soft when the argument turns sharp because defense is just fear in disguise. / Choose
+them again when the novelty fades and the work begins. / Love is the evidence of courage."*
+
+### Three traps found while producing the proof
+
+1. **Relative wav paths.** `Error opening input file …assemble_build\narr.wav`, rc 4294967294, no output. The concat
+   demuxer resolves relative paths against the **list file's** directory. Every narration wav and clip path is now
+   `os.path.abspath()`. This is already in the shared `video-pipeline` skill; it caught me anyway.
+2. **The voice cache is keyed by filename, not content.** A delivered proof was captioned *"griefs"* — a word in
+   neither script — because `render_script` reused `pN.wav` from the previous run while the captions came from the new
+   text. Fixed with a content-addressed work dir: `proof_<format>_<sha1(text)[:8]>`.
+3. **`HTTP 402` on ForChi's TTS keys** mid-render. Its pool has tighter TTS quota than X's; the fix above is to walk
+   the whole pool rather than three keys.
+
+**Verified:** both files `1080x1920`, `h264` + `aac`, `blackdetect` clean, durations under ForChi's own 58 s cap, and
+a frame from each was opened — the devotion frame's caption reads *"say"*, which is in the delivered script, so audio
+and text now agree.
+
+**Left open:** ForChi's changes are **uncommitted** for its owner to review. Shorts still are not scheduled by me;
+ForChi's own scheduler is untouched.
+
+---
+
 ## 2026-11-01 (whisper removed from emmanuel by changing the cue; scripts rewritten to the owner's own examples)
 
 **Plane(s):** this folder only. No server change, no OAuth work, keys not rotated (owner's instruction).

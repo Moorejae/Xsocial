@@ -1,17 +1,19 @@
 ---
 name: x-forchi-bridge
-description: 'The two places this project now reaches into ForChi (C:\Users\hp\forchi): the Gemini TTS voice backend added to tools/_video_voice.py so Shorts can use the X channel voice, and the emotion/weather labels merged into media/clips/manifest.json. Load this before touching ForChi from here, when ForChi Shorts fails at the voice stage, when VOICE_BACKEND is questioned, when ForChi clips need re-labelling, or when someone asks why ForChi has a `gemini` voice path at all.'
+description: 'The three places this project reaches into ForChi (C:\Users\hp\forchi): the Gemini TTS voice backend in tools/_video_voice.py, the two X writing formats (confession and devotion) added to tools/_video_script.py and rotated per Short, and the emotion/weather labels merged into media/clips/manifest.json. Load this before touching ForChi from here, when ForChi Shorts fail at the script or voice stage, when captions do not match the audio, when VOICE_BACKEND is questioned, or when asked for a ForChi video proof.'
 ---
 
 # ForChi, from here
 
-ForChi is a separate repository and a live production system. This project touches it in exactly two
-places, and both were owner requests. Nothing else in ForChi should be changed from here without
+ForChi is a separate repository and a live production system. This project touches it in exactly three
+places, and each was an owner request. Nothing else in ForChi should be changed from here without
 being asked.
 
 ## When to use
 
-- ForChi Shorts fail at the voice stage, or someone asks how its voice is configured.
+- ForChi Shorts fail at the script or voice stage, or someone asks how either is configured.
+- A ForChi video's captions do not match what is spoken.
+- A video proof of ForChi is wanted (`X/scripts/forchi_proof.py --format both`).
 - ForChi's clip pool needs emotion labels refreshed.
 - About to change anything under `C:\Users\hp\forchi`.
 
@@ -57,7 +59,47 @@ the path whenever the variable is not `gemini`.
 face.", …)` through ForChi's own module returned one `p1.wav`, **5.12 s / 251,876 bytes** — 12 words at
 2.34 words/s, which is Leda's pace.
 
-## 2. Emotion labels written into ForChi's clip pool
+## 2. The two X writing formats are now ForChi's Shorts formats
+
+`tools/_video_script.py` gained `X_FORMATS = {"confession", "devotion"}` — the jephter and emmanuel writing
+formats — and `next_x_format(history)` **alternates** them, so consecutive Shorts do not share a shape.
+
+```python
+script = vs.generate_script_checked()                    # rotates confession -> devotion -> confession
+script = vs.generate_script_checked(style="devotion")    # or force one
+script = vs.generate_script_checked(style="victor")      # personality persona still available by name
+```
+
+`generate_script()` now selects the prompt with `X_FORMATS.get(style, PERSONA_PROMPT)`, and the "expand this to
+length" round no longer tells an X-format script to follow the Victor aphorism→subversion→anchor formula.
+
+| Format | Voice | Shape |
+| :--- | :--- | :--- |
+| `confession` | first person "I" to an absent "you" | claim → "But some nights…" → turn → quiet want |
+| `devotion` | imperative, "Love them…" | 6-12 commands, ≤2 "because" clauses → a named standard |
+
+Both ban scene description — no hands, rooms, weather or objects — because that is what the owner's own reference
+scripts do, and what he called "nice".
+
+## 3. Producing a proof, and three traps in that path
+
+`X/scripts/forchi_proof.py --format both` runs ForChi's whole chain (script → voice → clips → assemble) and delivers
+to Downloads. Three failures cost real time on 2026-11-01 and are handled in that script:
+
+| Trap | Symptom | Cause |
+| :--- | :--- | :--- |
+| **Relative wav paths** | `Error opening input file …assemble_build\narr.wav`, rc 4294967294, no output file | the concat demuxer resolves relative paths against the **list file's** directory. Pass `os.path.abspath()` for every narration wav and clip path |
+| **The voice cache is keyed by filename** | the delivered video's caption said *"griefs"*, a word from neither script — audio from the previous run, captions from the new one | `render_script` skips any `pN.wav` that exists. Use a **content-addressed work dir** (`proof_<format>_<sha1(text)[:8]>`), or delete the dir when the script changes |
+| **`HTTP 402` mid-render** | `gemini-3.8-flash-tts HTTP 402 -> next model` three times, then failure with 6 of 7 phrases done | ForChi's key pool has limited TTS quota and the first version tried only three keys per phrase. It now walks **every key** before dropping to the next model, and a 402 is treated like a 429 (key cooled for 300 s). The cache makes the retry cheap |
+
+Verified proofs, 2026-11-01:
+
+```text
+forchi_confession_20261101-1014_38s.mp4   37.5 s  1080x1920  h264/aac  black=0
+forchi_devotion_20261101-1016_48s.mp4     48.1 s  1080x1920  h264/aac  black=0
+```
+
+## 4. Emotion labels written into ForChi's clip pool
 
 `X/scripts/label_emotions.py --forchi` labels all 211 segments and writes **two** things:
 

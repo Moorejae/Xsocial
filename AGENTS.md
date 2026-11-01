@@ -365,6 +365,7 @@ waterfall as ForChi (a key that is refused or out of quota is demoted, and the n
 | `config/scenes/<wf>.json` | the measured + vision-labelled clip manifest, now also carrying `emotion` and `weather` | `python scripts\label_emotions.py --workflow <wf>` |
 | `config/scenes/<wf>-labels.md` | the human-readable clip → emotion → weather table | `python scripts\label_emotions.py --workflow <wf> --table` |
 | `scripts/label_emotions.py` | emotion (`happy sad excited angry calm love fear surprise`) + weather labels; also labels ForChi's pool with `--forchi` | `python scripts\label_emotions.py --workflow jephter` |
+| `scripts/forchi_proof.py` | runs ForChi's chain in an X writing format and delivers the mp4 to Downloads | `python scripts\forchi_proof.py --format both` |
 | `config/songs/<wf>.json` | the measured song manifest | same command |
 | `scripts/gemini_keys.py` | key split, rotation, model ladder, TTS, validation | `python scripts\gemini_keys.py --audit` |
 | `scripts/x_media.py` | label clips and songs; `--vision` adds subject/baked-text | `python scripts\x_media.py --label jephter` |
