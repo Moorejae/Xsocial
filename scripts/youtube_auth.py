@@ -528,6 +528,63 @@ def serve(workflows: list[str], port: int, timeout: float = 900.0) -> int:
     return 0 if not missing else 1
 
 
+def exchange_pasted(workflow: str, pasted: str, port: int,
+                    client_id: str = "", client_secret: str = "") -> int:
+    """Exchange a callback URL (or a bare code) that was produced on *someone else's* machine.
+
+    The loopback redirect is why this exists. A consent link emailed to a channel owner opens on
+    their computer, so when Google redirects to `http://localhost:8765/<wf>/callback` there is no
+    listener there and the browser shows a connection error — but the **code is in the address bar**.
+    That URL, pasted back here, is exchanged with the same redirect_uri the request used, which is
+    what Google requires. Nothing secret needs to travel: only the short-lived code does.
+    """
+    text = (pasted or "").strip().strip('"').strip("'")
+    if not text:
+        raise SystemExit("nothing pasted")
+    params = {}
+    if "code=" in text or "error=" in text:
+        query = text.split("?", 1)[1] if "?" in text else text
+        params = {k: v[0] for k, v in urllib.parse.parse_qs(query).items()}
+    elif "://" in text:
+        raise SystemExit("that URL carries no ?code= — copy the whole address bar after approving")
+    else:
+        params["code"] = text                      # a bare code
+    if "error" in params:
+        raise SystemExit(f"Google refused the consent: {params['error']} "
+                         f"({params.get('error_description', 'no description')})")
+    code = params.get("code")
+    if not code:
+        raise SystemExit("no ?code= in what was pasted")
+
+    cid, secret = credentials(workflow, client_id, client_secret)
+    tokens = post_form(TOKEN_URI, {
+        "code": code, "client_id": cid, "client_secret": secret,
+        "redirect_uri": redirect_uri(workflow, port), "grant_type": "authorization_code",
+    })
+    if "refresh_token" not in tokens:
+        print(f"no refresh_token returned (keys={sorted(tokens)}) — the account may have approved "
+              f"before; revoke at myaccount.google.com/permissions and use a fresh link", file=sys.stderr)
+        return 1
+    title, channel_id = whoami_safe(tokens["access_token"])
+    granted = tokens.get("scope", " ".join(SCOPES)).split()
+    save(workflow, {
+        "workflow": workflow, "client_id": cid, "client_secret": secret,
+        "refresh_token": tokens["refresh_token"],
+        "redirect_uri": redirect_uri(workflow, port),
+        "scopes": granted,
+        "channel_title": title, "channel_id": channel_id,
+        "obtained_at": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
+    })
+    short = " ".join(s.rsplit("/", 1)[-1] for s in granted)
+    print(f"stored {workflow}: {title} ({channel_id})")
+    print(f"  granted scopes: {short}")
+    if not any(s.endswith("/youtube.upload") for s in granted):
+        print("  MISSING youtube.upload — this token cannot post; re-issue the link and tick it",
+              file=sys.stderr)
+        return 1
+    return 0
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description="YouTube OAuth for one X workflow (never prints a secret)")
     ap.add_argument("--workflow", choices=WORKFLOWS)
@@ -538,6 +595,9 @@ def main() -> int:
     ap.add_argument("--port", type=int, default=DEFAULT_PORT)
     ap.add_argument("--client-id", default="")
     ap.add_argument("--client-secret", default="")
+    ap.add_argument("--from-url", default="",
+                    help="exchange a callback URL (or bare code) produced on another machine — the "
+                         "flow for a consent link emailed to a channel owner")
     ap.add_argument("--selftest", action="store_true",
                     help="check the encryption at rest without touching Google")
     ap.add_argument("--print-url", action="store_true",
@@ -555,6 +615,9 @@ def main() -> int:
 
     if not a.workflow:
         ap.error("--workflow is required unless --selftest or --serve is given")
+
+    if a.from_url:
+        return exchange_pasted(a.workflow, a.from_url, a.port, a.client_id, a.client_secret)
 
     if a.print_url:
         # Use the same client chain as the real flow, so this check cannot disagree with it.

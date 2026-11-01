@@ -187,6 +187,93 @@ def token_status(workflow: str) -> dict:
             "detail": "app is in Testing: publish it, or re-consent every 7 days"}
 
 
+REMINDERS = ROOT / "out" / "auth_reminders.json"
+
+
+def token_day(obtained_at: str, now: datetime) -> int | None:
+    """Which day of its 7-day life the refresh token is on — day 1 is the day it was granted."""
+    try:
+        got = datetime.fromisoformat(str(obtained_at))
+    except (TypeError, ValueError):
+        return None
+    if got.tzinfo is None:
+        got = got.replace(tzinfo=now.tzinfo)
+    delta = (now.date() - got.date()).days
+    return delta + 1 if delta >= 0 else None
+
+
+def load_reminders(path: Path = REMINDERS) -> dict:
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {}
+
+
+def reminder_due(workflow: str, obtained_at: str, now: datetime, days: tuple[int, ...],
+                 sent: dict | None = None) -> int | None:
+    """The day number whose reminder is owed, or None.
+
+    Keyed on the token's own `obtained_at`, so a re-consent resets the schedule by itself — the sent
+    markers belong to the old grant and are simply ignored.
+    """
+    day = token_day(obtained_at, now)
+    if day is None or day not in days:
+        return None
+    already = (sent or {}).get(workflow) or {}
+    if already.get("obtained_at") == obtained_at and day in (already.get("days") or []):
+        return None
+    return day
+
+
+def mark_reminded(workflow: str, obtained_at: str, day: int, path: Path = REMINDERS) -> None:
+    data = load_reminders(path)
+    entry = data.get(workflow) or {}
+    if entry.get("obtained_at") != obtained_at:
+        entry = {"obtained_at": obtained_at, "days": []}
+    entry.setdefault("days", [])
+    if day not in entry["days"]:
+        entry["days"].append(day)
+    data[workflow] = entry
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+
+
+def reminder_message(workflow: str, day: int, link: str, expires_on: str) -> tuple[str, str]:
+    """The re-authorisation mail a channel owner actually has to act on.
+
+    It is addressed to the person who owns the Google account, so it explains the loopback trap
+    rather than assuming a technical reader: the link must be opened signed in as that channel, and
+    the browser will end on an error page whose address is the thing we need back.
+    """
+    name = {"jephter": "Jephter", "emmanuel": "Emmanuel"}.get(workflow, workflow.title())
+    subject = f"Action needed: reconnect the {name} YouTube channel (day {day} of 7)"
+    body = (
+        f"Hello,\n\n"
+        f"The Google permission that lets the {name} channel publish short videos expires on\n"
+        f"{expires_on}. It has to be renewed by signing in once — it takes about a minute.\n\n"
+        f"WHAT TO DO\n"
+        f"  1. Open this link in a browser, signed in as the Google account that owns the\n"
+        f"     {name} YouTube channel:\n\n"
+        f"{link}\n\n"
+        f"  2. Choose that account. On the consent screen, KEEP the YouTube box ticked — without it\n"
+        f"     the tool can read the channel but cannot upload, which looks fine and then fails.\n\n"
+        f"  3. Press Continue. The browser will then show an error page (\"site can't be reached\",\n"
+        f"     \"localhost refused to connect\" — the wording varies). THAT IS EXPECTED. The page is\n"
+        f"     not meant to load.\n\n"
+        f"  4. Copy the FULL address from the browser's address bar and send it back in a reply.\n"
+        f"     It looks like:\n\n"
+        f"       http://localhost:8765/{workflow}/callback?state=...&code=4/0A...\n\n"
+        f"     That whole line is what we need. Do not shorten it.\n\n"
+        f"WHY IT WORKS THIS WAY\n"
+        f"  The tool receives the approval on the machine it runs on, so the browser has to hand the\n"
+        f"  approval back there. Sending the address is how that hand-off is done safely: the code is\n"
+        f"  short-lived and grants only this one channel.\n\n"
+        f"If you would rather not do this, reply and we will arrange a time to do it together.\n\n"
+        f"— {name} publishing tool\n"
+    )
+    return subject, body
+
+
 def summarise(now: datetime, tokens: dict | None = None) -> str:
     """Plain facts for the heartbeat: what posted today, and how fresh the timer is."""
     try:
@@ -298,6 +385,70 @@ def send(subject: str, body: str, settings: dict[str, str], to: str) -> str:
     return f"sent to {to} via {host}:{port}"
 
 
+def reminders_possible(now: datetime, days: tuple[int, ...]) -> list[str]:
+    """Workflows whose reminder day is today — decided from local files only, no network.
+
+    This exists so the daily-API-call budget is honest: the watchdog runs every 30 minutes, and
+    asking Google about token expiry on all 48 passes would be pointless. Reading `obtained_at` and
+    comparing a date costs nothing, so the network is touched only on the two days that matter.
+    """
+    out: list[str] = []
+    sent = load_reminders()
+    for wf in ("jephter", "emmanuel"):
+        try:
+            import youtube_auth as ya
+            obtained = ya.load(wf).get("obtained_at", "")
+        except Exception:                                     # noqa: BLE001 - no credential, no reminder
+            continue
+        if reminder_due(wf, obtained, now, days, sent) is not None:
+            out.append(wf)
+    return out
+
+
+def run_reminders(now: datetime, days: tuple[int, ...], settings: dict[str, str],
+                  tokens: dict, dry_run: bool, override_to: str = "") -> list[str]:
+    """Day-4 and day-5 re-authorisation mails, one per channel per day, to the channel's own inbox.
+
+    Only while the token is actually expiring. Once the OAuth app is published the reminder has no
+    subject matter, so silence is correct — not a missed notification.
+    """
+    notes: list[str] = []
+    try:
+        cfg = json.loads((ROOT / "config" / "workflows.json").read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return ["config/workflows.json unreadable"]
+    sent = load_reminders()
+    for wf in ("jephter", "emmanuel"):
+        if (tokens.get(wf) or {}).get("kind") != "testing":
+            continue
+        try:
+            import youtube_auth as ya
+            obtained = ya.load(wf).get("obtained_at", "")
+            cid, _ = ya.credentials(wf)
+        except Exception as exc:                              # noqa: BLE001
+            notes.append(f"{wf}: cannot build a consent link ({type(exc).__name__})")
+            continue
+        day = reminder_due(wf, obtained, now, days, sent)
+        if day is None:
+            continue
+        link = ya.consent_url(wf, cid)
+        expires = (datetime.fromisoformat(obtained) + timedelta(days=7)).strftime("%d %B %Y")
+        subject, body = reminder_message(wf, day, link, expires)
+        to = override_to or (cfg.get(wf) or {}).get("channel_email") or (cfg.get(wf) or {}).get("contact_email")
+        if not to:
+            notes.append(f"{wf}: no channel_email in config/workflows.json")
+            continue
+        if dry_run:
+            notes.append(f"{wf}: day {day} reminder WOULD go to {to}")
+            notes.append("  " + link)
+            continue
+        result = send(subject, body, settings, to)
+        notes.append(f"{wf}: day {day} reminder — {result}")
+        if result.startswith("sent"):
+            mark_reminded(wf, obtained, day)
+    return notes
+
+
 def selftest() -> int:
     """Prove the parser and the message builder without touching a log file or a mailbox."""
     now = datetime(2026, 11, 1, 16, 0, tzinfo=ZoneInfo("Africa/Lagos"))
@@ -343,6 +494,48 @@ def selftest() -> int:
         kept = fat.read_text(encoding="utf-8").splitlines()
         assert len(kept) == 10 and kept[-1] == "line 49", kept[:2]
         print("ok   log trimming keeps the tail")
+
+        # --- the re-authorisation reminders: day 4 and day 5 only, and only once each -----------
+        obtained = "2026-11-01T15:08:26+0100"
+
+        def at(day: int) -> datetime:
+            return datetime(2026, 11, day, 19, 0, tzinfo=now.tzinfo)
+
+        assert token_day(obtained, at(1)) == 1, token_day(obtained, at(1))
+        assert token_day(obtained, at(5)) == 5
+        print("ok   token_day counts the consent day as day 1")
+
+        days = (4, 5)
+        assert reminder_due("jephter", obtained, at(3), days, {}) is None
+        assert reminder_due("jephter", obtained, at(4), days, {}) == 4
+        assert reminder_due("jephter", obtained, at(5), days, {}) == 5
+        assert reminder_due("jephter", obtained, at(6), days, {}) is None
+        print("ok   a reminder is owed on day 4 and day 5, and on no other day")
+
+        mark = Path(td) / "auth_reminders.json"
+        mark_reminded("jephter", obtained, 4, mark)
+        sent = load_reminders(mark)
+        assert reminder_due("jephter", obtained, at(4), days, sent) is None, "day 4 must not repeat"
+        assert reminder_due("jephter", obtained, at(5), days, sent) == 5, "day 5 is still owed"
+        print("ok   each reminder is sent once per grant")
+
+        # A re-consent produces a new obtained_at, so the old markers stop applying by themselves.
+        newer = "2026-11-03T09:00:00+0100"
+        assert reminder_due("jephter", newer, at(4), days, sent) is None, "day 4 of the NEW grant is day 2"
+        print("ok   a fresh consent restarts the schedule instead of replaying old sends")
+
+        # Reminders stop being owed once the app is published: day 5 with a non-dry run must skip.
+        skipped = run_reminders(at(5), days, {}, {"jephter": {"kind": "ok", "days": None},
+                                                  "emmanuel": {"kind": "ok", "days": None}},
+                                dry_run=True)
+        assert skipped == [], skipped
+        print("ok   nothing is reminded once the app is published (tokens stop expiring)")
+
+        subject, body = reminder_message("jephter", 4, "https://example.invalid/consent", "08 November 2026")
+        for needle in ("localhost:8765/jephter/callback", "address bar", "YouTube box"):
+            assert needle in body, needle
+        assert "day 4" in subject, subject
+        print("ok   the reminder explains the loopback trap instead of assuming a technical reader")
     return 0
 
 
@@ -361,6 +554,16 @@ def main() -> int:
     ap.add_argument("--no-heartbeat", action="store_true", help="skip the daily heartbeat")
     ap.add_argument("--force-token-check", action="store_true",
                     help="ask Google when the refresh tokens expire, even if the daily marker is set")
+    ap.add_argument("--remind-days", "--reminder-days", dest="reminder_days", default="4,5",
+                    help="days of the token's 7-day life on which to mail the channel owner (default 4,5)")
+    ap.add_argument("--remind-after-hour", type=int, default=9,
+                    help="do not mail a channel owner before this hour (default 9 — a reminder at "
+                         "00:20 is the first pass of the day, and nobody wants that email then)")
+    ap.add_argument("--no-reminders", action="store_true", help="skip the re-authorisation reminders")
+    ap.add_argument("--remind-to", default="",
+                    help="send reminders to this address instead of each channel's own (for testing)")
+    ap.add_argument("--test-reminder", action="store_true",
+                    help="build and send one reminder now, to ALERT_EMAIL, ignoring the day rule")
     ap.add_argument("--selftest", action="store_true", help="no log, no mail")
     a = ap.parse_args()
 
@@ -371,10 +574,17 @@ def main() -> int:
     trim_log(LOG)
     trim_log(WATCH_LOG)
 
-    # One network call a day per channel, bounded to the heartbeat, so the watchdog stays a local
-    # check on 47 of 48 passes.
+    try:
+        reminder_days = tuple(int(d) for d in str(a.reminder_days).replace(" ", "").split(",") if d)
+    except ValueError:
+        ap.error("--reminder-days wants day numbers, e.g. 4,5")
+
+    # One network call a day per channel — plus the two reminder days — so the watchdog stays a
+    # local check on almost every pass.
     hb_due = (not a.no_heartbeat and heartbeat_due(now, a.heartbeat_hour)) or a.force_token_check
-    tokens = {wf: token_status(wf) for wf in ("jephter", "emmanuel")} if hb_due else {}
+    due = [] if (a.no_reminders or now.hour < a.remind_after_hour) else reminders_possible(now, reminder_days)
+    need = set(due) | ({"jephter", "emmanuel"} if hb_due or a.test_reminder else set())
+    tokens = {wf: token_status(wf) for wf in sorted(need)}
 
     problems = [] if a.test_mail else check(now, a.max_age, a.deadline_hour)
     for wf, t in tokens.items():
@@ -399,12 +609,37 @@ def main() -> int:
         print(f"    - {p}")
 
     settings, to = mail_settings()
+
+    if a.test_reminder:
+        import youtube_auth as ya
+        wf = "jephter"
+        obtained = ya.load(wf).get("obtained_at", "")
+        cid, _ = ya.credentials(wf)
+        link = ya.consent_url(wf, cid)
+        expires = ((datetime.fromisoformat(obtained) + timedelta(days=7)).strftime("%d %B %Y")
+                   if obtained else "7 days from consent")
+        subject, body = reminder_message(wf, 0, link, expires)
+        subject = "[TEST] " + subject
+        if a.dry_run:
+            print(f"--- test reminder, would go to {a.remind_to or to} ---")
+            print(body)
+            return 0
+        result = send(subject, body, settings, a.remind_to or to)
+        print(f"  test reminder: {result}")
+        return 0 if result.startswith("sent") else 1
+
     if a.dry_run:
         print("\n--- would send ---")
         print(body)
         if not a.no_heartbeat and heartbeat_due(now, a.heartbeat_hour):
             print(f"--- plus the daily heartbeat (after {a.heartbeat_hour:02d}:00) ---")
             print(summarise(now, tokens))
+        if not a.no_reminders:
+            notes = run_reminders(now, reminder_days, settings, tokens, dry_run=True,
+                                  override_to=a.remind_to)
+            print(f"--- re-authorisation reminders (days {','.join(map(str, reminder_days))}, "
+                  f"after {a.remind_after_hour:02d}:00) ---")
+            print("\n".join(f"  {n}" for n in notes) if notes else "  none owed today")
         return 0
 
     rc = 0
@@ -423,6 +658,13 @@ def main() -> int:
             # Not marking it means the next pass tries again; a heartbeat that silently fails to
             # send is worse than none, because the silence looks like a dead machine.
             rc = rc or 1
+
+    if not a.no_reminders and now.hour >= a.remind_after_hour:
+        for note in run_reminders(now, reminder_days, settings, tokens, dry_run=False,
+                                  override_to=a.remind_to):
+            print(f"  reminder: {note}")
+            if "not sent" in note:
+                rc = rc or 1
     return rc
 
 

@@ -126,6 +126,7 @@ paths is enough for both.
 | Consent succeeded but the wrong channel appears | two clients, two browser sessions, one Google login | revoke and redo with the right account; always read back the channel title |
 | `access_denied` during consent | the client's Google account is not a test user while the app is in Testing | publish, or add the account as a test user |
 | Callback page says **Not authorised** and shows `HTTPError: HTTP Error 403: Forbidden`, on every channel at once | the scope requested does not allow the call the authoriser makes after the exchange: `youtube.upload` alone cannot call `channels.list` | request `youtube.readonly` too, **restart the `--serve` listener** (a running process keeps the old `SCOPES`), and open the newly printed link. Token saving must not depend on that read-back — `whoami_safe()` in `youtube_auth.py` exists for exactly this |
+| The consent link was emailed to the channel owner and their browser shows "site can't be reached" after approving | the redirect is a **loopback** URI: `http://localhost:8765/<wf>/callback` exists only on the machine running the tool, not on theirs | expected. The code is in *their* address bar — have them send the whole URL back, then `python scripts\youtube_auth.py --workflow <wf> --from-url "<that url>"`. `x_watchdog.py` mails exactly these instructions on day 4 and day 5 of the token's life |
 
 ## Verification
 

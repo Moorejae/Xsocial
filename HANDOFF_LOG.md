@@ -4,6 +4,95 @@ Newest first. Every change gets an entry, with evidence. See [AGENTS.md](AGENTS.
 
 ---
 
+## 2026-11-01 (re-authorisation mails to the channel owners on day 4 and day 5; a pasted-URL exchange)
+
+**Plane(s):** this folder only. No host, no upload, no push to ForChi.
+
+**Asked:** "brown cenima belongs to emmanuel, dont commit forchi's commit yet.. for the auth app send it to the
+channels respective emails .. send the email on the 4th and 5th days."
+
+Three answers, one small build.
+
+| Answer | Where |
+| :--- | :--- |
+| **Brown Cinema *is* the emmanuel channel** — settled, so no re-consent and no deletion | `config/workflows.json`, and the branding fix from the entry above stands |
+| **ForChi stays local** — `a3e4816` is committed in `C:\Users\hp\forchi` and **not pushed** to either remote | — |
+| **Reminders go to the channel owners, on day 4 and day 5 of the token's life** | built below |
+
+**Changed:**
+
+| File | Change |
+| :--- | :--- |
+| `config/workflows.json` | new `channel_email` per workflow — the owner's own address for that channel, separate from `contact_email`. **No secret**: these are client contact addresses, the same kind of value as `contact_email` |
+| `scripts/x_watchdog.py` | `token_day`, `reminder_due`, `mark_reminded`, `reminder_message`, `reminders_possible`, `run_reminders`; `--remind-days`, `--remind-after-hour`, `--remind-to`, `--test-reminder` |
+| `scripts/youtube_auth.py` | **new** `--from-url`: exchange a callback URL (or bare code) produced on someone else's machine |
+| `skills/x-watchdog` | the day-4/day-5 table, the loopback explanation, the trial procedure |
+| `skills/x-google-console-oauth` | failure row for "emailed link, browser says site can't be reached" |
+
+### Why the mail needs `--from-url` at all
+
+The redirect URI is `http://localhost:8765/<channel>/callback`. On **this** machine a listener catches it. On
+the channel owner's machine there is no listener, so after they approve, the browser shows a connection error
+— and the authorisation code is sitting in the address bar. That is the whole hand-off: they reply with the
+URL, and `--from-url` exchanges it using the same `redirect_uri` the request used, which is what Google
+requires. Without that flag the emailed link would be a dead end, which is why it was built in the same
+change rather than after the first complaint.
+
+`--from-url` accepts a full URL or a bare code, refuses an `?error=` URL, and refuses a URL with no code.
+Eight cases checked offline; the exchange itself is the same `post_form` path the listener already uses.
+
+### The reminder rules
+
+| Rule | Why |
+| :--- | :--- |
+| day 1 = the consent day, from `obtained_at` in the token file | a re-consent resets the schedule with no separate state to forget |
+| day 4 and day 5 only | matches what the owner asked for, and leaves 2-3 days to act before the 7-day death |
+| once per grant per day, recorded in `out\auth_reminders.json` keyed by `obtained_at` | a fresh grant cannot inherit a stale "already sent" |
+| nothing before 09:00 (`--remind-after-hour`) | the task's first pass of the day is ~00:20; nobody wants that email then |
+| silent when `refresh_token_expires_in` is absent | once the app is published the tokens stop expiring, so a reminder has no subject matter |
+| the day is decided from **local files**, Google is only asked on those two days | measured: a normal pass runs in **0.7 s** and makes no network call |
+
+**Verified — the schedule, the body, and both send paths:**
+
+```text
+python scripts\x_watchdog.py --selftest      # 12 assertions, all ok, including:
+ok   token_day counts the consent day as day 1
+ok   a reminder is owed on day 4 and day 5, and on no other day
+ok   each reminder is sent once per grant
+ok   a fresh consent restarts the schedule instead of replaying old sends
+ok   nothing is reminded once the app is published (tokens stop expiring)
+ok   the reminder explains the loopback trap instead of assuming a technical reader
+
+# the calendar, simulated rather than waited for:
+2026-11-03 -> owed: none
+2026-11-04 -> owed: ['jephter', 'emmanuel']
+2026-11-05 -> owed: ['jephter', 'emmanuel']
+2026-11-06 -> owed: none
+day 4 at 06:05 -> nothing sent (hour gate)
+day 4 at 09:05 -> ['jephter', 'emmanuel']
+
+# a real send, redirected to the owner so no client inbox was touched:
+jephter:  real recipient would be chineduagu598@gmail.com
+emmanuel: real recipient would be steadfast7878@gmail.com
+ - jephter:  day 4 reminder — sent to aguswigad@gmail.com via smtp.gmail.com:587
+ - emmanuel: day 4 reminder — sent to aguswigad@gmail.com via smtp.gmail.com:587
+```
+
+`out\auth_reminders.json` was **deleted after that trial**, so day 4 is still owed for real — confirmed by
+re-running the calendar above. That step matters: the markers are keyed on the grant, not on "was this a test".
+
+```text
+python scripts\x_watchdog.py --dry-run --heartbeat-hour 23
+--- re-authorisation reminders (days 4,5, after 09:00) ---
+  none owed today
+```
+
+**Left open:** if the owner publishes the OAuth app before 2026-11-04, the reminders will simply never fire —
+correct, but it means the only proof of a real client send is a `--remind-to` trial. ForChi's `a3e4816` stays
+local by instruction.
+
+---
+
 ## 2026-11-01 (ForChi formats side by side again; the watchdog, the alarm and the heartbeat)
 
 **Plane(s):** this folder and `C:\Users\hp\forchi` (one file). No host touched, no upload.

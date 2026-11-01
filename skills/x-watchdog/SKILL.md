@@ -84,6 +84,71 @@ Both paths have been observed working: the test alarm and the heartbeat both ret
 `sent to … via smtp.gmail.com:587`, and `out\.heartbeat` then held the current date. Do **not** clear that
 marker to "check again" — a heartbeat that sends twice a day trains the owner to ignore it.
 
+## The re-authorisation mail (day 4 and day 5)
+
+While the app is in Testing a token dies after 7 days, and the person who has to fix it is the **channel
+owner**, not the operator. So the watchdog mails them, twice, with warning to spare:
+
+| Day of the token's life | Who receives it | What it asks for |
+| :--- | :--- | :--- |
+| day 1 | nobody — granted today | — |
+| **day 4** | `channel_email` in `config/workflows.json` | open a link, keep the YouTube box ticked, reply with the address bar |
+| **day 5** | same | same |
+| day 6-7 | nobody — already asked twice | — |
+
+Rules that make it safe to leave running:
+
+- **Day 1 is the consent day**, counted from `obtained_at` in the token file — not from a timer the
+  watchdog keeps. A re-consent therefore resets the schedule by itself.
+- **Once per grant per day.** `out\auth_reminders.json` records `{obtained_at, days[]}`; markers from an
+  older grant are ignored rather than deleted, so a fresh consent cannot inherit a stale "already sent".
+- **Nothing before 09:00** (`--remind-after-hour`). The task's first pass of the day is around 00:20 and
+  nobody wants that email then.
+- **Silent once the app is published.** The reminder only builds when the refresh response carries
+  `refresh_token_expires_in`. After publishing, tokens stop expiring and there is nothing to remind about.
+- **Free on 46 of 48 daily passes.** `reminders_possible()` decides from local files whether today is day
+  4 or 5; only then is Google asked. Measured: a normal pass runs in **0.7 s** with no network call.
+
+Recipients live in config, not in the script, because they are the client's addresses:
+
+```json
+"jephter":  { "contact_email": "…", "channel_email": "chineduagu598@gmail.com" },
+"emmanuel": { "contact_email": "…", "channel_email": "steadfast7878@gmail.com" }
+```
+
+### The loopback trap the mail has to explain
+
+`redirect_uri` is `http://localhost:8765/<channel>/callback`. A link emailed to a channel owner opens on
+**their** computer, so Google redirects to a localhost that has no listener and the browser shows a
+connection error. That is expected, and the **code is sitting in the address bar**. The mail says so in
+plain words, step by step, and asks for that whole URL back.
+
+The exchange is then:
+
+```powershell
+python scripts\youtube_auth.py --workflow jephter --from-url "http://localhost:8765/jephter/callback?state=...&code=4/0A..."
+```
+
+`--from-url` accepts a full URL or a bare code, rejects an `?error=` URL and a URL with no code, and
+exchanges with the same `redirect_uri` the request used — which is what Google requires. Nothing but the
+short-lived code ever travels.
+
+```powershell
+python scripts\x_watchdog.py --test-reminder --dry-run   # the exact mail, sends nothing
+python scripts\x_watchdog.py --test-reminder             # send it to ALERT_EMAIL, never to a client
+python scripts\x_watchdog.py --remind-to me@example.com --remind-days 4,5   # redirect for a real trial
+```
+
+Verify the schedule without waiting four days:
+
+```powershell
+python -c "import sys;sys.path.insert(0,'scripts');import x_watchdog as xw;from datetime import datetime;from zoneinfo import ZoneInfo;print([ (d, xw.reminders_possible(datetime(2026,11,d,19,0,tzinfo=ZoneInfo('Africa/Lagos')),(4,5))) for d in (3,4,5,6)])"
+# 3 -> [], 4 -> ['jephter','emmanuel'], 5 -> ['jephter','emmanuel'], 6 -> []
+```
+
+**Remember to delete `out\auth_reminders.json` after a redirected trial**, or the day it was trialled will
+look already-sent.
+
 ## Mail without a new secret
 
 Settings are read from this project's `.env`, falling back to ForChi's (same chain as the YouTube credential):
@@ -116,6 +181,12 @@ python scripts\x_watchdog.py --selftest
 # ok   the escalation names WHAT / WHY / TRIED / ACTION
 # ok   exactly one heartbeat a day, tracked by a dated marker
 # ok   log trimming keeps the tail
+# ok   token_day counts the consent day as day 1
+# ok   a reminder is owed on day 4 and day 5, and on no other day
+# ok   each reminder is sent once per grant
+# ok   a fresh consent restarts the schedule instead of replaying old sends
+# ok   nothing is reminded once the app is published (tokens stop expiring)
+# ok   the reminder explains the loopback trap instead of assuming a technical reader
 
 Start-ScheduledTask 'X watchdog'; Get-ScheduledTaskInfo 'X watchdog'
 Get-Content out\watchdog.log -Tail 5          # 'healthy' is a logged result, not an assumption
