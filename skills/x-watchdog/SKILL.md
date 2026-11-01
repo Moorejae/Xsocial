@@ -137,6 +137,18 @@ Recipients live in config, not in the script. Resolution order is deliberate —
 
 `channel_email` stays in config as the client's address for other uses; it is **last** on purpose.
 
+### One mail per channel, never a digest — decided, do not "improve" it
+
+With three channels sharing the operator's inbox, a reminder day delivers several mails. That is deliberate:
+
+| Why separate | Why not one digest |
+| :--- | :--- |
+| each mail carries **one** consent link, so it cannot be partially completed or confused with another channel's | three long URLs in one body multiplies the unclickable-link risk that already cost ForChi days |
+| the subject names the channel, so it is findable later ("which one did I do?") | the mailbox becomes one un-searchable blob of links |
+| a failed send is attributable to one channel, so the alert names it | one failed mail loses all three links at once |
+
+ForChi sends its own separately, from its own code; this project does not merge with it.
+
 ### The mail must contain a button, not just a URL
 
 ForChi recorded this on 2026-10-22: a long consent URL in a plain-text body is not reliably auto-linkified by

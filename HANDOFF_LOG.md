@@ -4,6 +4,58 @@ Newest first. Every change gets an entry, with evidence. See [AGENTS.md](AGENTS.
 
 ---
 
+## 2026-11-01 (the cadence answer, and the mistake in the first version of it)
+
+**Skills loaded:** `x-watchdog` (the one-mail-per-channel decision recorded below), plus a read of ForChi's
+`src/workflows/video/slots.js` and `v10Scheduler.js` as the sources of truth for its cadence rather than trusting
+a file header.
+
+**Plane(s):** read-only on both repos, plus one doc change here.
+
+**Asked:** "how many videos does 4Chi post every single day with this new change?"
+
+**The answer, measured:** **2 Shorts a day**, at **10:00 and 17:00 WAT** — `SLOT_HOURS_WAT = [10, 17]`,
+`TZ = "Africa/Lagos"` in `src/workflows/video/slots.js`, which is the single source both ForChi schedulers read.
+Nothing I changed today touches cadence: the ForChi commits were the script formats and the Gemini/Leda voice.
+
+**A correction, recorded because I got it wrong first.** My first reply said the V10 long-form pipeline posts
+"1 per day". Two errors in that:
+
+1. It is **3 per week**, not daily — `WEEKLY_SLOT` in `v10Scheduler.js` has `days: [1, 3, 5]` (Mon/Wed/Fri, 15:00
+   WAT). The file's own opening comment still says "ONE long-form video post per day", which is the **stale**
+   line; the constant below it and the 2026-09-28 directive comment are the truth.
+2. It is **not running at all**: `V10_ENABLED = false` in ForChi's `.env`.
+
+So ForChi today posts **2 videos a day**, and both are Shorts. `TIKTOK_DISABLED = true` rules out a third copy
+being pushed anywhere else.
+
+The lesson is the one AGENTS.md §0 exists for: a file header is a comment, not a measurement. Read the constant.
+
+**Changed:** `skills/x-watchdog` — a new section recording that **one mail per channel is the decision, not an
+oversight**, with the reasons (one link per mail cannot be half-completed or confused across channels; three URLs
+in one body multiplies the unclickable-link risk that already cost ForChi days; a failed send stays attributable
+to one channel). Without it, the obvious "improvement" for a three-channel operator is a digest, and that would
+undo the button work in the same commit that added it.
+
+**Verified:**
+
+```text
+python -c "json ... config/workflows.json"
+  jephter   daily_count=2  produce=[7, 14]  post=[10, 17]
+  emmanuel  daily_count=2  produce=[7, 14]  post=[10, 17]
+
+ForChi slots.js   -> TZ = "Africa/Lagos"; SLOT_HOURS_WAT = [10, 17]
+ForChi v10Scheduler.js -> DAYS_DEFAULT = [1, 3, 5];  targetHour: 15
+ForChi .env (names only) -> SHORTS_ENABLED=true  V10_ENABLED=false  TIKTOK_DISABLED=true
+
+python scripts\x_watchdog.py --selftest -> 17 ok
+```
+
+**Left open:** nothing. Across all three channels that is 6 uploads a day, against the 100/project/day
+`videos.insert` bucket.
+
+---
+
 ## 2026-11-01 (re-auth mails go to the operator, not the clients — and Testing is permanent, so the alarm had to stop crying wolf)
 
 **Skills loaded:** `x-publishing` (who the channel identities are, and what a token may do), `x-watchdog` (its
