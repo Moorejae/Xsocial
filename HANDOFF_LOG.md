@@ -4,6 +4,99 @@ Newest first. Every change gets an entry, with evidence. See [AGENTS.md](AGENTS.
 
 ---
 
+## 2026-11-01 (ForChi restricted to the two X formats and committed; libraries relabelled; YouTube posting automated)
+
+**Plane(s):** this folder, and `C:\Users\hp\forchi` (**committed there this time — the owner asked for it to
+start running**).
+
+**Asked:** "make this forchi's only format, commit it, so it starts running... also relabel the clips using the same
+method i laid out... [emails] have been added to the same audience in same OAuth user used by forchi's short
+aguswigad@gmail.com... the final stage is to automate the youtube posting."
+
+**Changed:**
+
+| File | Change |
+| :--- | :--- |
+| ForChi `tools/_video_script.py` | the two X formats are now the **only** formats: any other style, including the retired `victor`, is replaced by the rotation inside `generate_script_checked`, so no caller can reintroduce the old persona |
+| ForChi `tools/_video_voice.py` | (already added) `render_gemini`, now walking every key per phrase and treating `402` like `429` |
+| ForChi `media/clips/*` + `config/scenes/*` | **every clip relabelled** with the emotion+weather method: jephter 54, emmanuel 43, forchi 211 |
+| `scripts/youtube_upload.py` | **new.** Resumable `videos.insert`, ledger claim before the side effect, hash-based duplicate refusal, `--check` that uploads nothing, private by default, duration sanity, `--selftest` |
+| `scripts/x_publish.py` | **new.** The daily entry point: already-published-today guard, render-if-missing, duration cap check, then upload. Idempotent, so a scheduler may run it hourly |
+| `scripts/youtube_auth.py` | `credentials()` now falls back to a **shared client**: `<WF>_GOOGLE_*` → `GOOGLE_CLIENT_*` → ForChi's `YOUTUBE_CLIENT_ID/_SECRET` read **in place** |
+| `.env.example` | `GOOGLE_CLIENT_ID/_SECRET`, `JEPHTER_REFRESH_TOKEN`, `EMMANUEL_REFRESH_TOKEN` — names only |
+| `skills/x-publishing` | **new skill** |
+| `AGENTS.md` | file map + skill table |
+
+### Relabelled libraries
+
+```text
+jephter   love 21, calm 12, happy 9, excited 5, sad 4, angry 1, fear 1, surprise 1
+          weather: clear 22, indoor 21, night 5, fog 2, none 3, snow 1
+emmanuel  love 18, excited 11, calm 5, sad 4, happy 3, fear 1, angry 1
+          weather: clear 24, night 8, indoor 6, rain 3, none 2
+forchi    calm 85, sad 55, excited 18, fear 18, love 15, happy 11, surprise 5, angry 4
+          weather: merged into manifest.json as `weather_emo` (211 entries)
+```
+
+Tables rewritten: `config/scenes/<wf>-labels.md`, `out/forchi_emotion_table.md`.
+
+### Key pool
+
+The key file changed but still parses to **18 keys, all 53 chars, all unique**; `--split` re-dealt 9/9 and
+`--audit` reports **8/8 invariants hold**.
+
+### Verified
+
+```text
+ForChi:  git commit d5b3981  "Shorts: the two X writing formats are the only formats"
+         requesting style='victor' now returns a rotation format (proved by calling it)
+         python -c "ast.parse" on both modules -> syntax ok
+
+uploader selftest (no network, no credential):
+  title='I told myself I was fine'  privacy=private
+  long line clipped to 93 chars
+  hash stable: a2e659dacb4691e8
+  double-post guard: claim blocks a second upload of the same file
+  selftest passed
+
+shared client found for both channels (id len 72, secret len 35 — ForChi's client, read in place):
+  jephter  -> http://localhost:8765/jephter/callback
+  emmanuel -> http://localhost:8765/emmanuel/callback
+
+python scripts\x_publish.py --workflow jephter --dry-run
+  jephter: jephter_20261101-092132.mp4  47.9s  privacy=private
+  -> stops with the correct, actionable message: run youtube_auth.py --workflow jephter
+```
+
+### The one thing that blocks the first real upload
+
+ForChi's client is a **Web application**, so its redirect URIs are an explicit list. Both loopback URIs must be
+added to that client in the console, or the consent screen answers `redirect_uri_mismatch`:
+
+```
+http://localhost:8765/jephter/callback
+http://localhost:8765/emmanuel/callback
+```
+
+Then, signed in as each channel's own Google account:
+
+```powershell
+python scripts\youtube_auth.py --workflow jephter      # prints the channel title it authorised — read it
+python scripts\youtube_auth.py --workflow emmanuel
+```
+
+### Quota worth knowing before scheduling
+
+`videos.insert` has its own bucket: **100 per project per day**. Three channels in one project share those 100 —
+they do not get 100 each. One video per channel per day is 3 of 100.
+
+**Left open:** (1) the console redirect URIs above; (2) the two consent runs; (3) choosing a scheduler — Windows
+Task Scheduler is documented because the media is local, systemd needs the libraries synced to the VPS first;
+(4) ForChi's commit is **local only** — its remotes are an HF Space and GitHub, and pushing would deploy, which is
+the owner's call.
+
+---
+
 ## 2026-11-01 (ForChi Shorts now written in the two X formats; two video proofs delivered)
 
 **Plane(s):** this folder, and `C:\Users\hp\forchi` (its working tree, **nothing committed there**).

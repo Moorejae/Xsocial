@@ -129,7 +129,8 @@ Skills learned *in this project* go in `X\skills\<name>\SKILL.md`, same format a
 | **`x-video-pipeline`** | Producing a short for either channel; a render with no audio, no captions, the wrong font or the wrong length; a song or clip that keeps recurring. |
 | **`x-voice-personas`** | A video that sounds wrong, fast, loud or not whispery; choosing a voice; keeping the two channels' voices distinct; TTS mime or 429 problems. |
 | **`x-test-video`** | The owner asks for a video, a test video, a sample or a re-render. It carries the delivery convention — `--deliver` puts the file and its report in `C:\Users\hp\Downloads`. |
-| **`x-forchi-bridge`** | Anything that reaches into `C:\Users\hp\forchi`: its voice backend, its emotion labels. Read before touching that project from here. |
+| **`x-forchi-bridge`** | Anything that reaches into `C:\Users\hp\forchi`: its voice backend, its writing formats, its emotion labels. Read before touching that project from here. |
+| **`x-publishing`** | Publishing to YouTube: the one client with three channels, the consent step, the double-post ledger, quota, and how to schedule the daily run. |
 
 ---
 
@@ -366,6 +367,8 @@ waterfall as ForChi (a key that is refused or out of quota is demoted, and the n
 | `config/scenes/<wf>-labels.md` | the human-readable clip → emotion → weather table | `python scripts\label_emotions.py --workflow <wf> --table` |
 | `scripts/label_emotions.py` | emotion (`happy sad excited angry calm love fear surprise`) + weather labels; also labels ForChi's pool with `--forchi` | `python scripts\label_emotions.py --workflow jephter` |
 | `scripts/forchi_proof.py` | runs ForChi's chain in an X writing format and delivers the mp4 to Downloads | `python scripts\forchi_proof.py --format both` |
+| `scripts/youtube_upload.py` | resumable upload, ledger-guarded, private by default | `python scripts\youtube_upload.py --workflow jephter --check` |
+| `scripts/x_publish.py` | the daily run: render if missing, upload once, never twice | `python scripts\x_publish.py --workflow both` |
 | `config/songs/<wf>.json` | the measured song manifest | same command |
 | `scripts/gemini_keys.py` | key split, rotation, model ladder, TTS, validation | `python scripts\gemini_keys.py --audit` |
 | `scripts/x_media.py` | label clips and songs; `--vision` adds subject/baked-text | `python scripts\x_media.py --label jephter` |

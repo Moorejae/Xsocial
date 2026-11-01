@@ -79,15 +79,44 @@ def redirect_uri(workflow: str, port: int = DEFAULT_PORT) -> str:
 
 
 def credentials(workflow: str, client_id: str = "", client_secret: str = "") -> tuple[str, str]:
+    """Client id + secret for a workflow, falling back to the shared client.
+
+    Since 2026-11-01 both X channels' Google accounts were added to the audience of the OAuth client
+    ForChi already uses, so there is **one client and three channels**. That means the console work is
+    done once and each channel only has to sign in. The chain is:
+
+    1. `--client-id` / `--client-secret`, or `<WORKFLOW>_GOOGLE_CLIENT_ID` / `_SECRET` in `.env`;
+    2. `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` in this project's `.env` (the shared client);
+    3. ForChi's `.env` — `YOUTUBE_CLIENT_ID` / `YOUTUBE_CLIENT_SECRET` — read in place, never copied.
+    """
     prefix = workflow.upper() + "_GOOGLE_"
     cid = client_id or read_env(prefix + "CLIENT_ID")
     secret = client_secret or read_env(prefix + "CLIENT_SECRET")
+    if not (cid and secret):
+        cid = cid or read_env("GOOGLE_CLIENT_ID")
+        secret = secret or read_env("GOOGLE_CLIENT_SECRET")
+    if not (cid and secret):
+        forchi = Path(r"C:\Users\hp\forchi\.env")
+        cid = cid or read_env_in(forchi, "YOUTUBE_CLIENT_ID")
+        secret = secret or read_env_in(forchi, "YOUTUBE_CLIENT_SECRET")
     if not cid or not secret:
         raise SystemExit(
-            f"{workflow}: client id/secret missing. Set {prefix}CLIENT_ID and {prefix}CLIENT_SECRET "
-            f"in .env (from that client's own Google console), or pass --client-id / --client-secret."
+            f"{workflow}: no OAuth client. Set {prefix}CLIENT_ID/_SECRET, or the shared "
+            f"GOOGLE_CLIENT_ID/_SECRET, or let it read ForChi's YOUTUBE_CLIENT_ID/_SECRET."
         )
     return cid, secret
+
+
+def read_env_in(path: Path, name: str) -> str:
+    """Read one setting from an arbitrary env file. Never logged."""
+    try:
+        for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
+            s = line.strip()
+            if s.startswith(name + "="):
+                return s.split("=", 1)[1].strip().strip('"').strip("'")
+    except FileNotFoundError:
+        pass
+    return ""
 
 
 def consent_url(workflow: str, client_id: str, port: int = DEFAULT_PORT) -> str:

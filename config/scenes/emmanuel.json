@@ -218,7 +218,7 @@
       "note": "luma 144, warmth -45, motion 0.7",
       "subject": "single",
       "baked_text": false,
-      "emotion": "calm",
+      "emotion": "excited",
       "weather": "clear"
     },
     {
@@ -328,7 +328,7 @@
       "note": "luma 102, warmth +5, motion 0.9",
       "subject": "couple",
       "baked_text": false,
-      "emotion": "happy",
+      "emotion": "love",
       "weather": "clear"
     },
     {
@@ -364,7 +364,7 @@
       "note": "luma 136, warmth -30, motion 1.2",
       "subject": "couple",
       "baked_text": false,
-      "emotion": "surprise",
+      "emotion": "love",
       "weather": "clear"
     },
     {
@@ -547,7 +547,7 @@
       "subject": "couple",
       "baked_text": false,
       "emotion": "sad",
-      "weather": "none"
+      "weather": "clear"
     },
     {
       "file": "Uartz.mp4",
@@ -654,7 +654,7 @@
       "note": "luma 34, warmth +1, motion 0.3",
       "subject": "couple",
       "baked_text": false,
-      "emotion": "excited",
+      "emotion": "happy",
       "weather": "rain"
     },
     {
@@ -766,7 +766,7 @@
       "note": "luma 116, warmth -13, motion 0.6",
       "subject": "couple",
       "baked_text": false,
-      "emotion": "love",
+      "emotion": "excited",
       "weather": "clear"
     },
     {
@@ -801,21 +801,20 @@
     "labelled_at": "2026-11-01",
     "model": "gemini-3.6-flash",
     "counts": {
-      "calm": 6,
-      "love": 17,
-      "excited": 10,
+      "calm": 5,
+      "love": 18,
+      "excited": 11,
       "fear": 1,
       "sad": 4,
       "happy": 3,
-      "surprise": 1,
       "angry": 1
     },
     "weather_counts": {
-      "clear": 23,
+      "clear": 24,
       "night": 8,
       "indoor": 6,
       "rain": 3,
-      "none": 3
+      "none": 2
     }
   }
 }
