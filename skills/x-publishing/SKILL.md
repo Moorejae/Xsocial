@@ -38,11 +38,11 @@ does not carry them. Nothing is copied.
 Anything a viewer reads — the description footer — must use the channel title the credential reports, not the
 config label: `metadata_for(..., channel_name=ch["title"])`.
 
-**Re-authorisation mail** goes to `channel_email` in `config/workflows.json` (the owner's inbox per channel), never
-to the operator's `contact_email`. Day 4 and day 5 of the refresh token's 7-day life, once per grant per day, not
-before 09:00, and the day-5 mail is worded as the final one. The redirect is a loopback URI, so the owner's browser
-ends on an error page with the code in the address bar — `youtube_auth.py --from-url "<that url>"` exchanges it.
-Full rules: `x-watchdog`.
+**Re-authorisation mail** goes to `reminder_email` in `config/workflows.json` — the operator's own inbox
+(agumoorewe@gmail.com), the same address ForChi's `EMAIL_TO` uses — not to the client's `channel_email`.
+Day 4 and day 5 of the refresh token's 7-day life, once per grant per day, not before 09:00, and the day-5
+mail is worded as the final one. The redirect is a loopback URI, so the browser ends on an error page with the
+code in the address bar — `youtube_auth.py --from-url "<that url>"` exchanges it. Full rules: `x-watchdog`.
 
 ## The one console step still needed
 
@@ -289,7 +289,7 @@ but does not copy the libraries). Then a `*.timer` with `OnCalendar=*:0/15` call
 | :--- | :--- | :--- |
 | `redirect_uri_mismatch` | the loopback URI is not registered on the client | add it in the console (§above) |
 | callback page says **Not authorised**, body `HTTPError: HTTP Error 403: Forbidden`, on *both* channels | `whoami()` called `channels.list` with a token that only had `youtube.upload` | keep `youtube.readonly` in `SCOPES`, restart `--serve`, re-open the fresh links. The token may already have been saved by `whoami_safe()` — run `--check` before redoing consent |
-| `invalid_grant` on refresh | consent revoked, or the app is in **Testing** and the 7-day refresh token expired | publish the app; re-run `youtube_auth.py` |
+| `invalid_grant` on refresh | consent revoked, or the app is in **Testing** and the 7-day refresh token expired | **Testing is the owner's deliberate choice** (2026-11-01), so this is routine: open the day-4/day-5 reminder mail, re-authorise, then `youtube_auth.py --workflow <wf> --from-url "<pasted url>"` |
 | `REFUSING: this file is already uploaded` | the ledger has a claim for those bytes | correct — check `--status`; `--force` only if you know it did not land |
 | `no render for today` | nothing was built today | add `--render-missing`, or run `x_render.py` first |
 | `over the 50s cap — not publishing` | a manual render with a longer script | re-render; the cap comes from `config/workflows.json` |

@@ -4,6 +4,92 @@ Newest first. Every change gets an entry, with evidence. See [AGENTS.md](AGENTS.
 
 ---
 
+## 2026-11-01 (re-auth mails go to the operator, not the clients — and Testing is permanent, so the alarm had to stop crying wolf)
+
+**Skills loaded:** `x-publishing` (who the channel identities are, and what a token may do), `x-watchdog` (its
+own reminder section — the mail-shape rule quoted below came from it), and ForChi's
+`src/workflows/video/authWatch.js` read as the reference the owner named. That last read is what turned
+"use the same method" into two concrete changes: the recipient and the **HTML button**.
+
+**Plane(s):** this folder only. Two test mails to the owner's own inbox; nothing else sent.
+
+**Asked:** "Not going to publish the app… they're all going to be in testing. 4Chi is even in testing… use the
+same method that 4Chi uses… send it every fourth and fifth day before the authentication expires… use the same
+email that 4Chi uses to send those authentication links, to me… you're gonna send me the oauth for Jephter, and
+also for Emmanuel, so wire them up."
+
+### What ForChi actually does, read rather than assumed
+
+| ForChi | Consequence here |
+| :--- | :--- |
+| sends to `EMAIL_TO` | **verified equal to this project's `contact_email`** — `ForChi EMAIL_TO == X contact_email ? True` (both len 20, local-part 10, gmail.com). So the recipient the owner named is already in config; no guessing |
+| `WARN_DAYS = EXPIRY_DAYS - 2`, one reminder per 7-day cycle | matches the day-4/day-5 rule already built |
+| **multipart: a real `<a>` button AND the bare URL** | adopted — see below; this was the expensive lesson |
+| Resend API | **not** adopted: SMTP already works here and has been observed delivering. Same mailbox, same result, one fewer credential |
+
+The HTML button is the part worth naming. ForChi's own code comment records it: *"Long consent URLs are not
+reliably auto-linkified by mail clients, and the owner never clicked the plain-text one -> posting stalled for
+days (2026-10-22)."* Every reminder here was plain text, so it carried exactly that risk.
+
+### Changed
+
+| File | Change |
+| :--- | :--- |
+| `config/workflows.json` | new `reminder_email` per workflow = **agumoorewe@gmail.com**. `channel_email` kept as the client's address, no longer used for reminders |
+| `scripts/x_watchdog.py` | `reminder_recipient()` — `reminder_email` → `contact_email` → `channel_email`, so the operator wins and the client is last |
+| `scripts/x_watchdog.py` | `reminder_html()` + `send(..., link=...)`: multipart text **and** HTML with an "Authorize YouTube →" button plus a "Button not working?" copy line, href escaped exactly once |
+| `scripts/x_watchdog.py` | the mail now names the channel (`Chinedu Jephtah` / `Brown Cinema`) and gives the `--from-url` command, since the operator runs it himself |
+| `scripts/x_watchdog.py` | `--test-reminder-workflow` so a test can carry either channel's link |
+| `scripts/x_watchdog.py` | **a real bug fixed — see below**: `kind == "testing"` is no longer a *problem* |
+| `scripts/x_watchdog.py` | `reminder_failures()` + its own alert: a reminder that could not be sent **does** escalate, because it is the only thing that renews a Testing token |
+| `AGENTS.md` §12 | the independence contract now says where reminders go, and records that **Testing is deliberate** |
+| `skills/x-watchdog`, `skills/x-publishing` | recipient order, the button rule, and the Testing-is-standing-policy note; "publish the app" advice removed from the `invalid_grant` row |
+
+### The bug this request exposed
+
+With Testing made *permanent*, the expiry check would have fired on **every pass — 48 emails a day, for ever** —
+because `kind == "testing"` was appended to `problems`, and any problem sends mail. An alarm that always fires
+is an alarm nobody reads, and it would have buried the real ones.
+
+Now: the expiry is a **note**, printed and included in the daily heartbeat; only a **failed reminder**, a dead
+timer, an overdue slot or a lost scope escalates. The distinction is the point — an expected condition must not
+page anyone.
+
+### Verified
+
+```text
+python scripts\x_watchdog.py --selftest                  -> 17 ok
+ok   the mail carries a real button and the raw URL beside it
+ok   reminders go to reminder_email, then contact_email, and only then the client
+ok   a failed reminder escalates; a routine expiry does not
+
+python scripts\x_watchdog.py --dry-run                   -> healthy          # no mail while nothing is wrong
+python scripts\x_watchdog.py --force-token-check --dry-run
+  healthy
+    note emmanuel: refresh token has 7 day(s) left (Testing — reminders on day 4,5)
+    note jephter: refresh token has 7 day(s) left (Testing — reminders on day 4,5)
+
+# the calendar, simulated (no mail sent):
+2026-11-04  jephter   -> agumoorewe@gmail.com  "Action needed: reconnect the Jephter YouTube channel"
+2026-11-04  emmanuel  -> agumoorewe@gmail.com  "Action needed: reconnect the Emmanuel YouTube channel"
+2026-11-05  jephter   -> agumoorewe@gmail.com  "Reminder: the Jephter YouTube channel stops publishing in 2 days"
+2026-11-05  emmanuel  -> agumoorewe@gmail.com  "Reminder: the Emmanuel YouTube channel stops publishing in 2 days"
+
+# two real mails, sent to prove the path (markers deliberately NOT written):
+python scripts\x_watchdog.py --test-reminder --test-reminder-workflow jephter
+  test reminder: sent to agumoorewe@gmail.com via smtp.gmail.com:587
+python scripts\x_watchdog.py --test-reminder --test-reminder-workflow emmanuel
+  test reminder: sent to agumoorewe@gmail.com via smtp.gmail.com:587
+out\auth_reminders.json -> does not exist  (so 4/5 Nov are still owed for real)
+
+Start-ScheduledTask 'X watchdog' -> LastTaskResult 0 ; out\watchdog.log -> healthy
+```
+
+**Left open:** the day-4 and day-5 mails are the mechanism now, so the two dates matter: **4 Nov** and
+**5 Nov**, to agumoorewe@gmail.com, one per channel. Nothing else is outstanding.
+
+---
+
 ## 2026-11-01 (ForChi published; the read-the-memory rule made compulsory; the 5th is the final reminder)
 
 **Skills loaded:** `x-publishing` (scope rules — its `videos.update` gap was the open question this entry

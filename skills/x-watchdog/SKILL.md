@@ -44,8 +44,12 @@ a pass happened recently, and it sends a **daily heartbeat** whose absence is it
 
 ### The 7-day bomb, and the tell that needs no console
 
-An OAuth app left in **Testing** issues refresh tokens that die after 7 days. Nothing in the stored token
-file records that, and the console is a web page you have to remember to open. The measurable tell is in the
+**The app stays in Testing deliberately** (owner, 2026-11-01) — for both X channels and for ForChi. So this is
+not a bug to report and not something to nag about: a 7-day refresh token means **weekly re-authorisation is the
+operating model**, and the day-4/day-5 mail is the mechanism. Publish app comes later, when the owner says so.
+
+An OAuth app in **Testing** issues refresh tokens that die after 7 days. Nothing in the stored token file
+records that, and the console is a web page you have to remember to open. The measurable tell is in the
 refresh response itself:
 
 ```powershell
@@ -58,8 +62,10 @@ live and the tokens are permanent. Measured 2026-11-01: both channels returned i
 schedule would have died — found by accident while checking something else, which is precisely why it is now
 a check.
 
-The fix is a console action, not code: APIs & Services → OAuth consent screen → **Publish app**, then
-re-consent each channel once (`youtube_auth.py --serve`) so the new token carries the longer life.
+The remedy while Testing is the standing choice is the reminder cycle, not publishing: the mail arrives on day 4
+and day 5, the owner re-authorises, and `--from-url` stores the new token. If the console is ever published
+(APIs & Services → OAuth consent screen → **Publish app**), `refresh_token_expires_in` disappears, the check
+goes quiet by itself, and reminders stop — no code change needed.
 
 ## Two rules this project paid for
 
@@ -86,18 +92,27 @@ marker to "check again" — a heartbeat that sends twice a day trains the owner 
 
 ## The re-authorisation mail (day 4 and day 5)
 
-While the app is in Testing a token dies after 7 days, and the person who has to fix it is the **channel
-owner**, not the operator. So the watchdog mails them, twice, with warning to spare:
+**The app stays in Testing, and that is a decision, not an oversight.** The owner confirmed on
+2026-11-01 that both X channels — and ForChi — will remain in **Testing** deliberately; publishing comes
+later. So the 7-day refresh-token cliff is the *standing policy*, and weekly re-authorisation is how the
+pipeline stays alive. Do not "fix" it by nagging to publish, and do not treat the expiry check as a bug report.
 
-| Day of the token's life | Who receives it | What it asks for |
-| :--- | :--- | :--- |
-| day 1 | nobody — granted today | — |
-| **day 4** | `channel_email` in `config/workflows.json` | open a link, keep the YouTube box ticked, reply with the address bar |
-| **day 5** | same | same, worded as the **final** reminder — "the channel stops publishing in 2 days" |
-| day 6-7 | nobody — already asked twice | — |
+The mail goes to the **operator's own inbox** — `reminder_email` in `config/workflows.json`, which is the same
+address ForChi's `EMAIL_TO` uses. Verified by comparison, not assumption:
 
-The day-5 mail is deliberately not a copy of the day-4 mail: a duplicate is ignored exactly when it must not be.
-The owner named the 5th as the day the links should land, and consent day + 4 = the 5th for a 1 Nov grant.
+```text
+ForChi EMAIL_TO == X contact_email ?  True      # len 20, local-part 10, gmail.com
+```
+
+| Day of the token's life | What is sent |
+| :--- | :--- |
+| day 1 | nothing — granted today |
+| **day 4** | `Action needed: reconnect the <channel> YouTube channel` |
+| **day 5** | `Reminder: the <channel> YouTube channel stops publishing in 2 days` — the final one |
+| day 6-7 | nothing — already asked twice |
+
+One mail **per channel**, so two arrive each reminder day, each with its own consent link. The day-5 mail is
+deliberately not a copy of the day-4 mail: a duplicate gets ignored exactly when it must not be.
 
 Rules that make it safe to leave running:
 
@@ -112,21 +127,33 @@ Rules that make it safe to leave running:
 - **Free on 46 of 48 daily passes.** `reminders_possible()` decides from local files whether today is day
   4 or 5; only then is Google asked. Measured: a normal pass runs in **0.7 s** with no network call.
 
-Recipients live in config, not in the script, because they are the client's addresses:
+Recipients live in config, not in the script. Resolution order is deliberate —
+`reminder_email` → `contact_email` → `channel_email` — because the **operator** receives these, not the client:
 
 ```json
-"jephter":  { "contact_email": "…", "channel_email": "chineduagu598@gmail.com" },
-"emmanuel": { "contact_email": "…", "channel_email": "steadfast7878@gmail.com" }
+"jephter":  { "reminder_email": "agumoorewe@gmail.com", "contact_email": "…", "channel_email": "chineduagu598@gmail.com" },
+"emmanuel": { "reminder_email": "agumoorewe@gmail.com", "contact_email": "…", "channel_email": "steadfast7878@gmail.com" }
 ```
+
+`channel_email` stays in config as the client's address for other uses; it is **last** on purpose.
+
+### The mail must contain a button, not just a URL
+
+ForChi recorded this on 2026-10-22: a long consent URL in a plain-text body is not reliably auto-linkified by
+mail clients, the owner never clicked it, and **posting stalled for days**. So every reminder here is
+multipart — `set_content(text)` **and** `add_alternative(reminder_html(text, link), subtype="html")` — with:
+
+- a real `<a href="…">Authorize YouTube →</a>` button,
+- the bare URL repeated under "Button not working? Copy this link:",
+- the href entity-escaped exactly once (`&` → `&amp;`, and never `&amp;amp;`).
+
+If you add another kind of auth mail, copy that shape. A link nobody clicks is the same as no link.
 
 ### The loopback trap the mail has to explain
 
-`redirect_uri` is `http://localhost:8765/<channel>/callback`. A link emailed to a channel owner opens on
-**their** computer, so Google redirects to a localhost that has no listener and the browser shows a
-connection error. That is expected, and the **code is sitting in the address bar**. The mail says so in
-plain words, step by step, and asks for that whole URL back.
-
-The exchange is then:
+`redirect_uri` is `http://localhost:8765/<channel>/callback`. It only exists on the machine running the tool,
+so after approving, the browser lands on a connection error and the **code is sitting in the address bar**.
+That is expected. The mail says so in plain words, step by step, then gives the command to run:
 
 ```powershell
 python scripts\youtube_auth.py --workflow jephter --from-url "http://localhost:8765/jephter/callback?state=...&code=4/0A..."
@@ -137,9 +164,9 @@ exchanges with the same `redirect_uri` the request used — which is what Google
 short-lived code ever travels.
 
 ```powershell
-python scripts\x_watchdog.py --test-reminder --dry-run   # the exact mail, sends nothing
-python scripts\x_watchdog.py --test-reminder             # send it to ALERT_EMAIL, never to a client
-python scripts\x_watchdog.py --remind-to me@example.com --remind-days 4,5   # redirect for a real trial
+python scripts\x_watchdog.py --test-reminder --dry-run                               # the exact mail, sends nothing
+python scripts\x_watchdog.py --test-reminder --test-reminder-workflow emmanuel        # one real send
+python scripts\x_watchdog.py --remind-to me@example.com --remind-days 4,5            # redirect for a trial
 ```
 
 Verify the schedule without waiting four days:

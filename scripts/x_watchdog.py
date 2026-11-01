@@ -240,20 +240,21 @@ def mark_reminded(workflow: str, obtained_at: str, day: int, path: Path = REMIND
 
 def reminder_message(workflow: str, day: int, link: str, expires_on: str,
                      final: bool = False) -> tuple[str, str]:
-    """The re-authorisation mail a channel owner actually has to act on.
+    """The re-authorisation mail.
 
-    It is addressed to the person who owns the Google account, so it explains the loopback trap
-    rather than assuming a technical reader: the link must be opened signed in as that channel, and
-    the browser will end on an error page whose address is the thing we need back.
+    Addressed to the operator (the owner's own inbox, same as ForChi's), who then runs the pasted-URL
+    exchange himself. It still explains the loopback step in full, because the link has to be opened
+    signed in as the right channel and the browser WILL end on an error page — that is the part that
+    looks broken and is not.
 
-    `final` marks the last reminder of the two. The owner asked for the 5th to be the day the links
-    land, so that mail reads like the one that matters — a second copy of the first would be ignored
-    exactly when it must not be.
+    `final` marks the last reminder of the two, so the mail that matters most does not arrive looking
+    identical to the one before it.
     """
     name = {"jephter": "Jephter", "emmanuel": "Emmanuel"}.get(workflow, workflow.title())
+    channel = {"jephter": "Chinedu Jephtah", "emmanuel": "Brown Cinema"}.get(workflow, name)
     if final:
         subject = f"Reminder: the {name} YouTube channel stops publishing in 2 days"
-        opening = ("This is the second and last reminder. Without one sign-in, the {n} channel stops\n"
+        opening = ("This is the second and last reminder. Without one sign-in the {n} channel stops\n"
                    "publishing short videos on {d}.\n\n").format(n=name, d=expires_on)
     else:
         subject = f"Action needed: reconnect the {name} YouTube channel"
@@ -264,27 +265,58 @@ def reminder_message(workflow: str, day: int, link: str, expires_on: str,
         f"Hello,\n\n"
         f"{opening}"
         f"WHAT TO DO\n"
-        f"  1. Open this link in a browser, signed in as the Google account that owns the\n"
-        f"     {name} YouTube channel:\n\n"
+        f"  1. Open the link below, signed in as the Google account that owns the {name}\n"
+        f"     channel ({channel}):\n\n"
         f"{link}\n\n"
         f"  2. Choose that account. On the consent screen, KEEP the YouTube box ticked — without it\n"
         f"     the tool can read the channel but cannot upload, which looks fine and then fails.\n\n"
         f"  3. Press Continue. The browser will then show an error page (\"site can't be reached\",\n"
         f"     \"localhost refused to connect\" — the wording varies). THAT IS EXPECTED. The page is\n"
         f"     not meant to load.\n\n"
-        f"  4. Copy the FULL address from the browser's address bar and send it back in a reply.\n"
+        f"  4. Copy the FULL address from the browser's address bar and run:\n\n"
+        f"       python scripts\\youtube_auth.py --workflow {workflow} --from-url \"<that url>\"\n\n"
         f"     It looks like:\n\n"
         f"       http://localhost:8765/{workflow}/callback?state=...&code=4/0A...\n\n"
-        f"     That whole line is what we need. Do not shorten it.\n\n"
+        f"     That whole line is what is needed. Do not shorten it.\n\n"
         f"WHY IT WORKS THIS WAY\n"
         f"  The tool receives the approval on the machine it runs on, so the browser has to hand the\n"
-        f"  approval back there. Sending the address is how that hand-off is done safely: the code is\n"
+        f"  approval back there. Pasting the address is how that hand-off is done: the code is\n"
         f"  short-lived and grants only this one channel.\n\n"
         f"Nothing else about the channel changes: the videos already published stay published.\n\n"
-        f"If you would rather not do this, reply and we will arrange a time to do it together.\n\n"
         f"— {name} publishing tool\n"
     )
     return subject, body
+
+
+def reminder_html(text: str, link: str) -> str:
+    """The HTML half of the reminder: a real button, plus the bare link as a fallback.
+
+    ForChi learned this the expensive way (recorded 2026-10-22): a long consent URL pasted into a
+    plain-text mail is not reliably auto-linkified by mail clients, the recipient never clicked it,
+    and posting stalled for days. So every auth mail here carries a real `<a>` button **and** the
+    raw URL, because a button that fails silently is worse than no button at all.
+    """
+    esc = lambda s: (str(s).replace("&", "&amp;").replace("<", "&lt;")
+                     .replace(">", "&gt;").replace('"', "&quot;"))
+    href = esc(link)
+    para = "".join(
+        f'<p style="margin:0 0 12px">{esc(line)}</p>' if line.strip() else ""
+        for line in text.split("\n")
+    )
+    # The plain part already shows the URL; in the HTML it becomes the button and the copy line.
+    para = para.replace(f'<p style="margin:0 0 12px">{esc(link)}</p>', "")
+    return (
+        '<!doctype html><html><body style="margin:0;padding:24px;color:#202124;'
+        'font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;'
+        'font-size:15px;line-height:1.55">'
+        f"{para}"
+        f'<p style="margin:26px 0 18px"><a href="{href}" style="background:#1a73e8;'
+        "border-radius:8px;color:#ffffff;display:inline-block;font-weight:700;"
+        'padding:14px 24px;text-decoration:none">Authorize YouTube →</a></p>'
+        '<p style="margin:0;color:#5f6368;font-size:12px">Button not working? Copy this link:<br>'
+        f'<a href="{href}" style="color:#1a73e8;word-break:break-all">{esc(link)}</a></p>'
+        "</body></html>"
+    )
 
 
 def summarise(now: datetime, tokens: dict | None = None) -> str:
@@ -375,7 +407,13 @@ def build_message(problems: list[str], now: datetime) -> tuple[str, str]:
     return subject, "\n".join(lines) + "\n"
 
 
-def send(subject: str, body: str, settings: dict[str, str], to: str) -> str:
+def send(subject: str, body: str, settings: dict[str, str], to: str,
+         link: str = "") -> str:
+    """Send one mail. When `link` is given, the message is multipart: plain text plus a button.
+
+    The two halves are not optional politeness — see reminder_html(). A consent URL in a plain-text
+    body is a URL the recipient may never click.
+    """
     host = settings.get("SMTP_HOST")
     port = int(settings.get("SMTP_PORT") or 587)
     user = settings.get("SMTP_USER")
@@ -388,6 +426,8 @@ def send(subject: str, body: str, settings: dict[str, str], to: str) -> str:
     msg["To"] = to
     msg["Subject"] = subject
     msg.set_content(body)
+    if link:
+        msg.add_alternative(reminder_html(body, link), subtype="html")
     with smtplib.SMTP(host, port, timeout=45) as s:
         s.ehlo()
         if port != 25:
@@ -396,6 +436,17 @@ def send(subject: str, body: str, settings: dict[str, str], to: str) -> str:
         s.login(user, password)
         s.send_message(msg)
     return f"sent to {to} via {host}:{port}"
+
+
+def reminder_recipient(workflow: str, cfg: dict, override: str = "") -> str:
+    """Who receives a re-authorisation mail.
+
+    The operator's own inbox by default — `reminder_email`, falling back to `contact_email`.
+    `channel_email` is the client's address and is deliberately last: the owner asked (2026-11-01)
+    to receive these himself, which is also what ForChi does — its `EMAIL_TO` is the same address.
+    """
+    wf = cfg.get(workflow) or {}
+    return override or wf.get("reminder_email") or wf.get("contact_email") or wf.get("channel_email") or ""
 
 
 def reminders_possible(now: datetime, days: tuple[int, ...]) -> list[str]:
@@ -420,10 +471,14 @@ def reminders_possible(now: datetime, days: tuple[int, ...]) -> list[str]:
 
 def run_reminders(now: datetime, days: tuple[int, ...], settings: dict[str, str],
                   tokens: dict, dry_run: bool, override_to: str = "") -> list[str]:
-    """Day-4 and day-5 re-authorisation mails, one per channel per day, to the channel's own inbox.
+    """Day-4 and day-5 re-authorisation mails, one per channel per day, to the operator's own inbox.
 
     Only while the token is actually expiring. Once the OAuth app is published the reminder has no
     subject matter, so silence is correct — not a missed notification.
+
+    A failed send is reported back so the caller can escalate it: the reminder is the mechanism that
+    keeps a Testing app alive, so a reminder that did not go out is a real problem, unlike the expiry
+    itself, which is expected.
     """
     notes: list[str] = []
     try:
@@ -448,19 +503,29 @@ def run_reminders(now: datetime, days: tuple[int, ...], settings: dict[str, str]
         expires = (datetime.fromisoformat(obtained) + timedelta(days=7)).strftime("%d %B %Y")
         # The last day in --remind-days is the one the owner waits for; it is worded as final.
         subject, body = reminder_message(wf, day, link, expires, final=(day == max(days)))
-        to = override_to or (cfg.get(wf) or {}).get("channel_email") or (cfg.get(wf) or {}).get("contact_email")
+        to = reminder_recipient(wf, cfg, override_to)
         if not to:
-            notes.append(f"{wf}: no channel_email in config/workflows.json")
+            notes.append(f"{wf}: no reminder_email / contact_email in config/workflows.json")
             continue
         if dry_run:
             notes.append(f"{wf}: day {day} reminder WOULD go to {to} — \"{subject}\"")
             notes.append("  " + link)
             continue
-        result = send(subject, body, settings, to)
+        result = send(subject, body, settings, to, link=link)
         notes.append(f"{wf}: day {day} reminder — {result}")
         if result.startswith("sent"):
             mark_reminded(wf, obtained, day)
     return notes
+
+
+def reminder_failures(notes: list[str]) -> list[str]:
+    """The reminder notes that represent a real failure, for the alert.
+
+    A reminder that could not be sent is the one genuine emergency in a Testing-only setup: it is the
+    only thing that renews the token. The expiry itself is routine; the mail not leaving is not.
+    """
+    return [n for n in notes
+            if "not sent" in n or "cannot build" in n or "no reminder_email" in n]
 
 
 def selftest() -> int:
@@ -558,6 +623,35 @@ def selftest() -> int:
         assert "second and last reminder" in last_body, last_body[:80]
         assert "day" not in first_subject.lower(), "a client should not see internal day counting"
         print("ok   the day-5 mail reads as the final one, not a copy of the day-4 mail")
+
+        # The HTML half: a real button, plus the raw URL as a fallback. ForChi lost days on this.
+        link = "https://accounts.google.com/o/oauth2/v2/auth?client_id=a&code_note=ok&state=x"
+        html = reminder_html(body, link)
+        escaped = link.replace("&", "&amp;")       # href must be entity-escaped to stay valid HTML
+        assert f'<a href="{escaped}"' in html, "the consent URL must be a real anchor"
+        assert "Authorize YouTube" in html, "the button label is the thing that gets clicked"
+        assert "Button not working?" in html and escaped in html, "the bare URL must survive as fallback"
+        assert "&amp;amp;" not in html, "escaping must not happen twice"
+        print("ok   the mail carries a real button and the raw URL beside it")
+
+        # Recipient order: the operator's own inbox first, the client's address last.
+        cfg_probe = {"jephter": {"reminder_email": "owner@example.com",
+                                 "contact_email": "contact@example.com",
+                                 "channel_email": "client@example.com"}}
+        assert reminder_recipient("jephter", cfg_probe) == "owner@example.com"
+        cfg_probe["jephter"].pop("reminder_email")
+        assert reminder_recipient("jephter", cfg_probe) == "contact@example.com"
+        cfg_probe["jephter"].pop("contact_email")
+        assert reminder_recipient("jephter", cfg_probe) == "client@example.com"
+        assert reminder_recipient("jephter", cfg_probe, "override@example.com") == "override@example.com"
+        print("ok   reminders go to reminder_email, then contact_email, and only then the client")
+
+        # A reminder that could not be sent is the one real emergency in a Testing-only setup, while
+        # the expiry itself is routine — so only the failure may escalate.
+        assert reminder_failures(["jephter: day 4 reminder — sent to a@b via smtp:587"]) == []
+        assert reminder_failures(["jephter: day 4 reminder — not sent: SMTP settings are incomplete"])
+        assert reminder_failures(["emmanuel: cannot build a consent link (SystemExit)"])
+        print("ok   a failed reminder escalates; a routine expiry does not")
     return 0
 
 
@@ -577,15 +671,18 @@ def main() -> int:
     ap.add_argument("--force-token-check", action="store_true",
                     help="ask Google when the refresh tokens expire, even if the daily marker is set")
     ap.add_argument("--remind-days", "--reminder-days", dest="reminder_days", default="4,5",
-                    help="days of the token's 7-day life on which to mail the channel owner (default 4,5)")
+                    help="days of the token's 7-day life on which to mail the owner (default 4,5)")
     ap.add_argument("--remind-after-hour", type=int, default=9,
-                    help="do not mail a channel owner before this hour (default 9 — a reminder at "
-                         "00:20 is the first pass of the day, and nobody wants that email then)")
+                    help="do not mail before this hour (default 9 — a reminder at 00:20 is the first "
+                         "pass of the day, and nobody wants that email then)")
     ap.add_argument("--no-reminders", action="store_true", help="skip the re-authorisation reminders")
     ap.add_argument("--remind-to", default="",
-                    help="send reminders to this address instead of each channel's own (for testing)")
+                    help="send reminders to this address instead of reminder_email (for testing)")
     ap.add_argument("--test-reminder", action="store_true",
-                    help="build and send one reminder now, to ALERT_EMAIL, ignoring the day rule")
+                    help="build and send one reminder now, ignoring the day rule")
+    ap.add_argument("--test-reminder-workflow", default="jephter",
+                    choices=("jephter", "emmanuel"),
+                    help="which channel's link to put in the test mail")
     ap.add_argument("--selftest", action="store_true", help="no log, no mail")
     a = ap.parse_args()
 
@@ -612,13 +709,11 @@ def main() -> int:
     for wf, t in tokens.items():
         if t["kind"] == "error":
             problems.append(f"{wf}: token check failed ({t['detail']})")
-        elif t["kind"] == "testing":
-            # Not a threshold: while the app is unpublished, publishing WILL stop, and the fix is a
-            # console action only the owner can take. Say it on every heartbeat until it is done.
-            problems.append(f"{wf}: refresh token expires in {t['days']:.0f} day(s) — the OAuth app is in "
-                            f"Testing, so publishing will stop with invalid_grant. Publish the app: "
-                            f"Google Cloud console -> APIs & Services -> OAuth consent screen -> "
-                            f"Publish app, then re-consent once.")
+        # `kind == "testing"` is deliberately NOT a problem. The owner keeps the app in Testing by
+        # decision (2026-11-01), so the 7-day cycle is expected and the reminders are the mechanism.
+        # Reporting it here would email every 30 minutes, for ever, about something that is working
+        # as designed — and an alarm that always fires is an alarm nobody reads.
+        # The expiry is stated in the daily heartbeat instead, and a *failed reminder* is a problem.
     subject, body = build_message(problems, now)
     if a.test_mail:
         subject = "[X] TEST — watchdog alarm (deliberate)"
@@ -629,12 +724,18 @@ def main() -> int:
     print(f"  {len(problems)} problem(s)" if problems else "  healthy")
     for p in problems:
         print(f"    - {p}")
+    for wf, t in tokens.items():
+        if t["kind"] == "testing":
+            print(f"    note {wf}: refresh token has {t['days']:.0f} day(s) left (Testing — reminders on "
+                  f"day {a.reminder_days})")
+        elif t["kind"] == "ok":
+            print(f"    note {wf}: refresh token does not expire")
 
     settings, to = mail_settings()
 
     if a.test_reminder:
         import youtube_auth as ya
-        wf = "jephter"
+        wf = a.test_reminder_workflow
         obtained = ya.load(wf).get("obtained_at", "")
         cid, _ = ya.credentials(wf)
         link = ya.consent_url(wf, cid)
@@ -642,11 +743,16 @@ def main() -> int:
                    if obtained else "7 days from consent")
         subject, body = reminder_message(wf, 0, link, expires)
         subject = "[TEST] " + subject
+        try:
+            cfg = json.loads((ROOT / "config" / "workflows.json").read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            cfg = {}
+        target = reminder_recipient(wf, cfg, a.remind_to) or to
         if a.dry_run:
-            print(f"--- test reminder, would go to {a.remind_to or to} ---")
+            print(f"--- test reminder, would go to {target} ---")
             print(body)
             return 0
-        result = send(subject, body, settings, a.remind_to or to)
+        result = send(subject, body, settings, target, link=link)
         print(f"  test reminder: {result}")
         return 0 if result.startswith("sent") else 1
 
@@ -682,11 +788,27 @@ def main() -> int:
             rc = rc or 1
 
     if not a.no_reminders and now.hour >= a.remind_after_hour:
-        for note in run_reminders(now, reminder_days, settings, tokens, dry_run=False,
-                                  override_to=a.remind_to):
+        notes = run_reminders(now, reminder_days, settings, tokens, dry_run=False,
+                              override_to=a.remind_to)
+        for note in notes:
             print(f"  reminder: {note}")
-            if "not sent" in note:
-                rc = rc or 1
+        failures = reminder_failures(notes)
+        if failures:
+            # The reminder IS the renewal mechanism for a Testing app, so a reminder that did not
+            # leave is worth its own alert — separate from the routine expiry notice.
+            rc = rc or 1
+            alert = ("WHAT: a re-authorisation reminder could not be sent.\n\n"
+                     + "\n".join(f"  - {f}" for f in failures)
+                     + "\n\nWHY: the OAuth app is in Testing by design, so the weekly reminder is the only "
+                       "thing that renews the token. If the mail never arrives, publishing stops on its own "
+                       "with invalid_grant and nothing else reports it.\n\n"
+                       "TRIED: one SMTP attempt via the configured host.\n\n"
+                       "ACTION:\n"
+                       "  1. python scripts\\x_watchdog.py --test-reminder --test-reminder-workflow jephter\n"
+                       "  2. Check SMTP_HOST / SMTP_USER / SMTP_PASS and reminder_email in config.\n"
+                       "  3. Re-run: python scripts\\x_watchdog.py --remind-days 4,5\n")
+            sent = send(f"[X] re-authorisation mail FAILED — {now:%Y-%m-%d %H:%M}", alert, settings, to)
+            print(f"  alert: {sent}")
     return rc
 
 
