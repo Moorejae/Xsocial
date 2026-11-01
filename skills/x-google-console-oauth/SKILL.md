@@ -124,6 +124,7 @@ paths is enough for both.
 | `HTTP 403 quotaExceeded` on insert | the 100/day `videos.insert` bucket is spent | wait for midnight PT, or request more quota |
 | Consent succeeded but the wrong channel appears | two clients, two browser sessions, one Google login | revoke and redo with the right account; always read back the channel title |
 | `access_denied` during consent | the client's Google account is not a test user while the app is in Testing | publish, or add the account as a test user |
+| Callback page says **Not authorised** and shows `HTTPError: HTTP Error 403: Forbidden`, on every channel at once | the scope requested does not allow the call the authoriser makes after the exchange: `youtube.upload` alone cannot call `channels.list` | request `youtube.readonly` too, **restart the `--serve` listener** (a running process keeps the old `SCOPES`), and open the newly printed link. Token saving must not depend on that read-back — `whoami_safe()` in `youtube_auth.py` exists for exactly this |
 
 ## Verification
 

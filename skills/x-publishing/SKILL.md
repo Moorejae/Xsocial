@@ -57,6 +57,29 @@ python scripts\youtube_auth.py --workflow emmanuel
 Each run prints the **channel title it authorised**. Read it: consenting as the wrong Google account is the
 easiest mistake here, and that title is the only proof consent landed on the right channel.
 
+### The scope that has to be in the consent URL
+
+`SCOPES` in `youtube_auth.py` is `youtube.upload` **+ `youtube.readonly`** + `openid` + `email`.
+
+`youtube.upload` alone authorises `videos.insert` and nothing else — it cannot call `channels.list`. The
+authoriser reads the channel back to prove which account consented, so without a read scope that call
+returns **`HTTP 403 Forbidden`**, the callback page says "Not authorised", and the refresh token is thrown
+away even though the exchange had already succeeded. That is exactly what happened on 2026-11-01 to both
+channels.
+
+Two rules now hold in `youtube_auth.py`, and both matter:
+
+1. `youtube.readonly` stays in `SCOPES`. It is a *read* scope, so it does not widen what the pipeline can
+   do, only what it can see.
+2. **The token is saved before the read-back is attempted, and the read-back may fail.** `whoami_safe()`
+   never raises. Evidence is not the deliverable; the token is. If a future scope change breaks
+   `channels.list` again, the post still goes out and only the printed channel title is degraded.
+
+When a consent link is regenerated, confirm the scope **in the URL** before opening it
+(`scope=...youtube.upload+youtube.readonly...`). A link minted by an older process does not change: the
+`--serve` listener must be restarted after editing `SCOPES`, or the owner will authorise an old scope and
+hit the same 403.
+
 ## Publishing
 
 ```powershell
@@ -159,6 +182,7 @@ but does not copy the libraries). Then a `*.timer` with `OnCalendar=*:0/15` call
 | Symptom | Cause | Fix |
 | :--- | :--- | :--- |
 | `redirect_uri_mismatch` | the loopback URI is not registered on the client | add it in the console (§above) |
+| callback page says **Not authorised**, body `HTTPError: HTTP Error 403: Forbidden`, on *both* channels | `whoami()` called `channels.list` with a token that only had `youtube.upload` | keep `youtube.readonly` in `SCOPES`, restart `--serve`, re-open the fresh links. The token may already have been saved by `whoami_safe()` — run `--check` before redoing consent |
 | `invalid_grant` on refresh | consent revoked, or the app is in **Testing** and the 7-day refresh token expired | publish the app; re-run `youtube_auth.py` |
 | `REFUSING: this file is already uploaded` | the ledger has a claim for those bytes | correct — check `--status`; `--force` only if you know it did not land |
 | `no render for today` | nothing was built today | add `--render-missing`, or run `x_render.py` first |

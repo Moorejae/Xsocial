@@ -251,7 +251,7 @@ Nothing you ship may depend on another thing running, and nothing may fail silen
 | **L0 retry** | transient errors retried, bounded, with backoff. Only if the operation is idempotent — a retried upload that has no ledger claim publishes twice. |
 | **L1 supervise** | systemd `Restart=always` + `StartLimitBurst` so a crash-loop is visible instead of infinite. |
 | **L2 detect** | a watchdog that notices a dead unit or a stuck job. |
-| **L3 escalate** | when restarts are exhausted, **email `agumoorewe@gmail.com`** (`.env` → `ALERT_EMAIL`) with WHAT / WHY / TRIED / ACTION. |
+| **L3 escalate** | when restarts are exhausted, email **`aguswigad@gmail.com`** (`.env` → `ALERT_EMAIL`) with WHAT / WHY / TRIED / ACTION. It is the mailbox ForChi already uses, so re-authorisation and failure notices land in one place the owner actually reads — a deliberate choice while this is still a testing app, not a permanent address |
 | **L4 dead-man** | a heartbeat checked from **outside** the machine, so silence alerts. Errors produce logs; absence produces nothing. |
 
 Full detail: `build-fallbacks` in the skill library. A fallback that has never been observed firing is a hope, not a

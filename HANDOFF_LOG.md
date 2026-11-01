@@ -4,6 +4,69 @@ Newest first. Every change gets an entry, with evidence. See [AGENTS.md](AGENTS.
 
 ---
 
+## 2026-11-01 (the 403 on both channels: a read scope, and a token that must outlive the read-back)
+
+**Plane(s):** this folder only. Nothing was sent to either Google console; no host was touched.
+
+**Asked:** "you can do them yourself... emails should be sent to the same email used by forchi for
+re-authorization", then "i have authorized jephtahs account... give me the links instead for emmanuels own", then
+"i got this error on both... ## Not authorised / HTTPError: HTTP Error 403: Forbidden".
+
+**What the error actually was.** Not the redirect URI, not the client, not the network, and not a wrong account.
+The authorisation code was exchanged for tokens successfully — a probe of `oauth2.googleapis.com/token` from this
+machine returns proper JSON, so the loopback path was intact. The `403` came one step later, from
+`whoami()` calling `channels.list(part=snippet, mine=true)` with the access token, because **`youtube.upload` does
+not authorise `channels.list`** — that scope covers `videos.insert` and essentially nothing else. The exception
+propagated out of the callback handler, the browser rendered "Not authorised", and `save()` was never reached, so
+**two valid refresh tokens were discarded**. Identical symptom on both channels is the fingerprint: a per-channel
+mistake would have failed on one.
+
+**Changed:**
+
+| File | Change |
+| :--- | :--- |
+| `scripts/youtube_auth.py` | `SCOPES` now requests `youtube.readonly` alongside `youtube.upload` (plus `openid`, `email`) |
+| `scripts/youtube_auth.py` | **new** `whoami_safe()` — `whoami()` that never raises, printing `could not read the channel back (...); token kept` |
+| `scripts/youtube_auth.py` | both save paths (single-shot `authorise()` and the `--serve` callback) call `whoami_safe()`, so the token is written even when the read-back fails |
+| `skills/x-publishing` | new section *The scope that has to be in the consent URL*, plus two failure-catalogue rows |
+| `skills/x-google-console-oauth` | failure-catalogue row for the identical 403 |
+
+The rule the second change encodes: **the refresh token is the deliverable; the channel title is evidence.**
+Evidence must never be able to destroy the deliverable. `youtube.readonly` is a read scope, so it widens what the
+pipeline can *see*, not what it can *do*.
+
+**The trap that would have made the fix look broken:** a `--serve` listener holds `SCOPES` in memory from the
+moment it started. Editing the file and re-opening the already-printed links re-requests the **old** scope and
+reproduces the same 403. The listener has to be killed and restarted, and the newly printed URL checked for
+`youtube.upload+youtube.readonly` before it is handed to the owner.
+
+**Verified:**
+
+```text
+python scripts\youtube_auth.py --selftest
+ok   seal/unseal round-trip
+ok   ciphertext rejected under the wrong workflow name
+ok   no plaintext in the written file (666: posix mode is not enforced on Windows)
+
+# old listener (PID 6856) killed; no stale scope can be served from memory:
+(Get-NetTCPConnection -LocalPort 8765 -State Listen).OwningProcess  ->  26496   # the new process
+```
+
+The freshly printed consent URLs carry the new scope, which is the check that matters:
+
+```text
+scope=https%3A%2F%2Fwww.googleapis.com%2Fauth%2Fyoutube.upload+https%3A%2F%2Fwww.googleapis.com%2Fauth%2Fyoutube.readonly+openid+email
+redirect_uri=http%3A%2F%2Flocalhost%3A8765%2Fjephter%2Fcallback
+redirect_uri=http%3A%2F%2Flocalhost%3A8765%2Femmanuel%2Fcallback
+```
+
+**Left open:** the two consent clicks (owner's browser, ~25 min listener window), then one **unlisted** post per
+channel with `x_publish.py --privacy unlisted --render-missing` and the `youtu.be` links. `secrets/youtube/` still
+holds no token. ForChi's `d5b3981` remains local, unpushed. The registered task *X daily publish* still posts
+`unlisted` — confirm with the owner before switching it to `public`.
+
+---
+
 ## 2026-11-01 (scheduler: production apart from posting, 2/day per channel, jittered slots)
 
 **Plane(s):** this folder only.

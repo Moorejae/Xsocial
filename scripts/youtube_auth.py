@@ -57,9 +57,17 @@ AUTH_URI = "https://accounts.google.com/o/oauth2/v2/auth"
 TOKEN_URI = "https://oauth2.googleapis.com/token"
 CHANNELS_URI = "https://www.googleapis.com/youtube/v3/channels"
 
-# The narrowest scope that can publish: youtube.upload covers videos.insert. `openid email` is
-# there so the operator can see which account consented; it grants no YouTube capability.
-SCOPES = ("https://www.googleapis.com/auth/youtube.upload", "openid", "email")
+# The narrowest scopes that can publish, plus enough to *read back* the channel we authorised.
+# `youtube.upload` alone covers videos.insert but NOT channels.list — asking for only that made every
+# verification call answer 403 and the token was discarded unsaved (measured 2026-11-01, both channels).
+# `youtube.readonly` is what lets us prove which channel consented, which is the whole point of the
+# read-back; it grants no write capability.
+SCOPES = (
+    "https://www.googleapis.com/auth/youtube.upload",
+    "https://www.googleapis.com/auth/youtube.readonly",
+    "openid",
+    "email",
+)
 
 
 def read_env(name: str) -> str:
@@ -135,17 +143,23 @@ def consent_url(workflow: str, client_id: str, port: int = DEFAULT_PORT) -> str:
 
 def post_form(url: str, fields: dict) -> dict:
     data = urllib.parse.urlencode(fields).encode()
-    req = urllib.request.Request(url, data=data, headers={"content-type": "application/x-www-form-urlencoded"})
+    req = urllib.request.Request(url, data=data, headers={
+        "content-type": "application/x-www-form-urlencoded",
+        # Some Google endpoints answer 403 to a request with no User-Agent at all.
+        "user-agent": "x-youtube-auth/1.0",
+        "accept": "application/json",
+    })
     try:
         with urllib.request.urlopen(req, timeout=60) as resp:
             return json.loads(resp.read().decode("utf-8", "replace"))
     except urllib.error.HTTPError as exc:
         body = exc.read().decode("utf-8", "replace")
-        # Google echoes no secret here, but scrub defensively before it reaches a terminal.
+        # Google explains the reason in the body; without it a 403 is unactionable. Scrub the
+        # request's own secrets before the text can reach a page or a terminal.
         for value in fields.values():
-            if isinstance(value, str) and len(value) > 20:
+            if isinstance(value, str) and len(value) > 16:
                 body = body.replace(value, "<redacted>")
-        raise SystemExit(f"token endpoint HTTP {exc.code}: {body[:300]}")
+        raise SystemExit(f"token endpoint HTTP {exc.code}: {body[:400]}")
 
 
 def whoami(access_token: str) -> tuple[str, str]:
@@ -158,6 +172,20 @@ def whoami(access_token: str) -> tuple[str, str]:
     if not items:
         return "(no channel on this account)", "(none)"
     return items[0]["snippet"]["title"], items[0]["id"]
+
+
+def whoami_safe(access_token: str) -> tuple[str, str]:
+    """`whoami` that never raises.
+
+    A refresh token is the thing consent exists to produce. Reading the channel back is evidence, not
+    the deliverable, so a failure here must not discard the token — on 2026-11-01 a 403 from
+    channels.list made both channels look unauthorised while the exchange had actually succeeded.
+    """
+    try:
+        return whoami(access_token)
+    except Exception as exc:                             # noqa: BLE001 - report, never fatal
+        print(f"  could not read the channel back ({type(exc).__name__}: {exc}); token kept", flush=True)
+        return "(unread)", f"({type(exc).__name__})"
 
 
 def save(workflow: str, payload: dict) -> Path:
@@ -319,7 +347,7 @@ def interactive_consent(workflow: str, client_id: str, client_secret: str, port:
               file=sys.stderr)
         return 1
 
-    title, channel_id = whoami(tokens["access_token"])
+    title, channel_id = whoami_safe(tokens["access_token"])
     payload = {
         "workflow": workflow,
         "client_id": client_id,
@@ -388,9 +416,114 @@ def selftest() -> int:
     return 0
 
 
+class _MultiCallback(http.server.BaseHTTPRequestHandler):
+    """Handles `<workflow>/callback` for any workflow while serving.
+
+    The single-shot listener was fine for one channel and actively misleading for two: the owner
+    authorised, the browser hit a port nobody was listening on, and the token was lost with no error
+    anywhere. This one stays up, dispatches on the path, exchanges each code and saves each token as
+    it arrives, so several channels can be authorised from several links in one session.
+    """
+    saved: dict = {}
+    expected: dict = {}          # workflow -> (client_id, client_secret, port)
+    stop_after: int = 4
+
+    def do_GET(self) -> None:  # noqa: N802 (http.server API)
+        parsed = urllib.parse.urlparse(self.path)
+        parts = [p for p in parsed.path.split("/") if p]
+        if len(parts) != 2 or parts[1] != "callback" or parts[0] not in self.expected:
+            self.send_response(404)
+            self.end_headers()
+            return
+        workflow = parts[0]
+        params = {k: v[0] for k, v in urllib.parse.parse_qs(parsed.query).items()}
+
+        ok, message = False, params.get("error", "no code returned")
+        if "code" in params:
+            cid, secret, port = self.expected[workflow]
+            try:
+                tokens = post_form(TOKEN_URI, {
+                    "code": params["code"], "client_id": cid, "client_secret": secret,
+                    "redirect_uri": redirect_uri(workflow, port), "grant_type": "authorization_code",
+                })
+                if "refresh_token" not in tokens:
+                    message = "no refresh_token returned; re-run (prompt=consent should force one)"
+                else:
+                    # A token is the thing we came for. Saving it must not depend on the read-back
+                    # succeeding: on 2026-11-01 a 403 from channels.list (missing read scope) threw
+                    # away two perfectly good refresh tokens.
+                    title, channel_id = whoami_safe(tokens["access_token"])
+                    save(workflow, {
+                        "workflow": workflow, "client_id": cid, "client_secret": secret,
+                        "refresh_token": tokens["refresh_token"],
+                        "redirect_uri": redirect_uri(workflow, port),
+                        "scopes": tokens.get("scope", " ".join(SCOPES)).split(),
+                        "channel_title": title, "channel_id": channel_id,
+                        "obtained_at": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
+                    })
+                    _MultiCallback.saved[workflow] = {"channel_title": title, "channel_id": channel_id}
+                    ok, message = True, f"{workflow}: authorised {title} ({channel_id})"
+                    print(f"\n  SAVED {message}", flush=True)
+            except SystemExit as exc:
+                message = str(exc)[:200]
+            except Exception as exc:                     # noqa: BLE001 - report, never crash the server
+                message = f"{type(exc).__name__}: {exc}"[:200]
+
+        body = (f"<h2>{'Authorised' if ok else 'Not authorised'}</h2><p>{message}</p>"
+                "<p>You can close this tab.</p>" if ok else
+                f"<h2>Not authorised</h2><p>{message}</p>").encode()
+        self.send_response(200)
+        self.send_header("content-type", "text/html; charset=utf-8")
+        self.send_header("content-length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def log_message(self, *args) -> None:
+        pass
+
+
+def serve(workflows: list[str], port: int, timeout: float = 900.0) -> int:
+    """Listen for several channels' callbacks at once and save each token as it arrives."""
+    for wf in workflows:
+        cid, secret = credentials(wf)
+        _MultiCallback.expected[wf] = (cid, secret, port)
+        print(f"  {wf}: {consent_url(wf, cid, port)}", flush=True)
+
+    print(f"\n  listening on http://localhost:{port}/<channel>/callback for {timeout:.0f}s", flush=True)
+    print("  open each link above, signed in as that channel's Google account, and approve.\n", flush=True)
+
+    class Server(socketserver.ThreadingTCPServer):
+        allow_reuse_address = True
+        daemon_threads = True
+
+    server = Server(("127.0.0.1", port), _MultiCallback)
+    server.timeout = 2.0
+    deadline = time.time() + timeout
+    try:
+        while time.time() < deadline and len(_MultiCallback.saved) < len(workflows):
+            server.handle_request()
+            pending = [w for w in workflows if w not in _MultiCallback.saved]
+            if pending and time.time() < deadline:
+                continue
+        else:
+            pass
+    finally:
+        server.server_close()
+
+    for wf in workflows:
+        got = _MultiCallback.saved.get(wf)
+        print(f"  {wf:<9} {'OK  ' + got['channel_title'] if got else 'NOT authorised'}", flush=True)
+    missing = [w for w in workflows if w not in _MultiCallback.saved]
+    return 0 if not missing else 1
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description="YouTube OAuth for one X workflow (never prints a secret)")
     ap.add_argument("--workflow", choices=WORKFLOWS)
+    ap.add_argument("--serve", action="store_true",
+                    help="listen for several channels at once (use with --workflow repeated or no --workflow "
+                         "for both)")
+    ap.add_argument("--timeout", type=float, default=900.0)
     ap.add_argument("--port", type=int, default=DEFAULT_PORT)
     ap.add_argument("--client-id", default="")
     ap.add_argument("--client-secret", default="")
@@ -405,16 +538,21 @@ def main() -> int:
     if a.selftest:
         return selftest()
 
+    if a.serve:
+        targets = [a.workflow] if a.workflow else list(WORKFLOWS)
+        return serve(targets, a.port, a.timeout)
+
     if not a.workflow:
-        ap.error("--workflow is required unless --selftest is given")
+        ap.error("--workflow is required unless --selftest or --serve is given")
 
     if a.print_url:
-        # The secret is deliberately not required here: showing the consent URL is a read-only,
-        # secret-free operation and it is the fastest way to check the redirect URI by eye.
-        cid = a.client_id or read_env(a.workflow.upper() + "_GOOGLE_CLIENT_ID")
-        if not cid:
-            raise SystemExit(f"{a.workflow}: no client id. Pass --client-id or set "
-                             f"{a.workflow.upper()}_GOOGLE_CLIENT_ID in .env")
+        # Use the same client chain as the real flow, so this check cannot disagree with it.
+        try:
+            cid, _ = credentials(a.workflow, a.client_id, a.client_secret)
+        except SystemExit:
+            cid = a.client_id or read_env(a.workflow.upper() + "_GOOGLE_CLIENT_ID")
+            if not cid:
+                raise
         print(consent_url(a.workflow, cid, a.port))
         print(f"\nredirect_uri registered in the console must be exactly: {redirect_uri(a.workflow, a.port)}",
               file=sys.stderr)
