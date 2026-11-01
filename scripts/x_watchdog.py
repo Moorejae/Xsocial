@@ -158,7 +158,36 @@ def check(now: datetime, max_age: float, deadline_hour: int) -> list[str]:
     return problems
 
 
-def summarise(now: datetime) -> str:
+def token_status(workflow: str) -> dict:
+    """Is the refresh token about to expire? One network call, no upload, no log.
+
+    An OAuth app left in **Testing** issues refresh tokens that die after 7 days, and nothing in the
+    token file says so. The tell is `refresh_token_expires_in` in the refresh response: it is present
+    only while the app is unpublished. Measured on 2026-11-01, both channels returned it, with 6 days
+    left — which would have stopped the schedule with `invalid_grant` a week later, silently.
+    """
+    try:
+        import youtube_auth as ya
+        cred = ya.load(workflow)
+        body = ya.post_form(ya.TOKEN_URI, {
+            "client_id": cred["client_id"],
+            "client_secret": cred["client_secret"],
+            "refresh_token": cred["refresh_token"],
+            "grant_type": "refresh_token",
+        })
+    except Exception as exc:                                  # noqa: BLE001 - report, never crash
+        return {"kind": "error", "days": None, "detail": f"{type(exc).__name__}: {exc}"[:160]}
+    if "refresh_token_expires_in" not in body:
+        return {"kind": "ok", "days": None, "detail": "no refresh_token_expires_in (app not in Testing)"}
+    try:
+        days = int(body["refresh_token_expires_in"]) / 86400.0
+    except (TypeError, ValueError):
+        days = 0.0
+    return {"kind": "testing", "days": days,
+            "detail": "app is in Testing: publish it, or re-consent every 7 days"}
+
+
+def summarise(now: datetime, tokens: dict | None = None) -> str:
     """Plain facts for the heartbeat: what posted today, and how fresh the timer is."""
     try:
         state = json.loads(STATE.read_text(encoding="utf-8"))
@@ -173,6 +202,15 @@ def summarise(now: datetime) -> str:
         ids = [v.get("note", "").split("/")[-1] for v in posted if v.get("note")]
         lines.append(f"  {wf:9} produced {len(produced)}  posted {len(posted)}"
                      + (f"  ({', '.join(ids)})" if ids else ""))
+        t = (tokens or {}).get(wf)
+        if t:
+            if t["kind"] == "testing":
+                lines.append(f"  {wf:9} refresh token expires in {t['days']:.0f} day(s) "
+                             f"— the OAuth app is still in Testing")
+            elif t["kind"] == "error":
+                lines.append(f"  {wf:9} token check failed: {t['detail']}")
+            else:
+                lines.append(f"  {wf:9} refresh token does not expire")
     try:
         text = LOG.read_text(encoding="utf-8", errors="replace")
         age = parse_log_age_minutes(text, now)
@@ -321,6 +359,8 @@ def main() -> int:
     ap.add_argument("--heartbeat-hour", type=int, default=19,
                     help="send the daily heartbeat after this hour (default 19)")
     ap.add_argument("--no-heartbeat", action="store_true", help="skip the daily heartbeat")
+    ap.add_argument("--force-token-check", action="store_true",
+                    help="ask Google when the refresh tokens expire, even if the daily marker is set")
     ap.add_argument("--selftest", action="store_true", help="no log, no mail")
     a = ap.parse_args()
 
@@ -331,7 +371,22 @@ def main() -> int:
     trim_log(LOG)
     trim_log(WATCH_LOG)
 
+    # One network call a day per channel, bounded to the heartbeat, so the watchdog stays a local
+    # check on 47 of 48 passes.
+    hb_due = (not a.no_heartbeat and heartbeat_due(now, a.heartbeat_hour)) or a.force_token_check
+    tokens = {wf: token_status(wf) for wf in ("jephter", "emmanuel")} if hb_due else {}
+
     problems = [] if a.test_mail else check(now, a.max_age, a.deadline_hour)
+    for wf, t in tokens.items():
+        if t["kind"] == "error":
+            problems.append(f"{wf}: token check failed ({t['detail']})")
+        elif t["kind"] == "testing":
+            # Not a threshold: while the app is unpublished, publishing WILL stop, and the fix is a
+            # console action only the owner can take. Say it on every heartbeat until it is done.
+            problems.append(f"{wf}: refresh token expires in {t['days']:.0f} day(s) — the OAuth app is in "
+                            f"Testing, so publishing will stop with invalid_grant. Publish the app: "
+                            f"Google Cloud console -> APIs & Services -> OAuth consent screen -> "
+                            f"Publish app, then re-consent once.")
     subject, body = build_message(problems, now)
     if a.test_mail:
         subject = "[X] TEST — watchdog alarm (deliberate)"
@@ -349,7 +404,7 @@ def main() -> int:
         print(body)
         if not a.no_heartbeat and heartbeat_due(now, a.heartbeat_hour):
             print(f"--- plus the daily heartbeat (after {a.heartbeat_hour:02d}:00) ---")
-            print(summarise(now))
+            print(summarise(now, tokens))
         return 0
 
     rc = 0
@@ -359,7 +414,7 @@ def main() -> int:
         rc = 0 if result.startswith("sent") else 1
 
     if not a.no_heartbeat and heartbeat_due(now, a.heartbeat_hour):
-        hb = summarise(now)
+        hb = summarise(now, tokens)
         result = send(f"[X] heartbeat — {now:%Y-%m-%d}", hb, settings, to)
         print(f"  heartbeat: {result}")
         if result.startswith("sent"):

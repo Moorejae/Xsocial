@@ -65,6 +65,32 @@ Get-ScheduledTaskInfo 'X daily publish' -> LastRunTime 15:59:02  LastTaskResult 
 Start-ScheduledTask 'X watchdog' -> LastTaskResult 0 ; out\watchdog.log -> healthy
 ```
 
+### The thing that would have stopped both channels next week
+
+While checking the deployment, one more refresh response was inspected — for its **keys**, never its values —
+and both channels returned `refresh_token_expires_in`:
+
+```python
+jephter:  keys=['access_token','expires_in','id_token','refresh_token_expires_in','scope','token_type']
+emmanuel: keys=['access_token','expires_in','id_token','refresh_token_expires_in','scope','token_type']
+  !! app appears to be in TESTING: refresh token expires in 6 days
+```
+
+`refresh_token_expires_in` appears **only** while the OAuth app is unpublished. So the whole schedule would have
+died around 2026-11-07 with `invalid_grant`, with clean logs and a healthy watchdog. It is now a check:
+
+```text
+python scripts\x_watchdog.py --force-token-check --dry-run
+  2 problem(s)
+    - jephter: refresh token expires in 7 day(s) — the OAuth app is in Testing, so publishing will stop...
+    - emmanuel: refresh token expires in 7 day(s) — ...
+```
+
+No threshold on purpose: while the app is unpublished, publishing *will* stop, and the remedy is a console action
+only the owner can take — so it is repeated on every daily heartbeat until it is done. The remedy: APIs & Services
+→ OAuth consent screen → **Publish app**, then re-consent each channel once so the new token carries the longer
+life. The check costs one API call a day because it rides the heartbeat; the other 47 passes stay local.
+
 The site stayed live for both workflows throughout (all four pages `200`: `/jephter/privacy.html`,
 `/jephter/terms.html`, `/emmanuel/privacy.html`, `/emmanuel/terms.html`), so nothing needed redeploying.
 

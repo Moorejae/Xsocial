@@ -120,6 +120,7 @@ paths is enough for both.
 | `redirect_uri_mismatch` | the URI in the console differs from `redirect_uri()` in `youtube_auth.py` | compare character for character, including scheme, port and path |
 | "Invalid Redirect: must end with a public top-level domain" | a Web client given an IP or a non-public host | use the Desktop client, or a real domain |
 | Every refresh returns `invalid_grant` after ~7 days | app still in **Testing** | publish the app; re-consent once |
+| You want to know **now** whether the app is in Testing, without opening the console | — | exchange the refresh token and look for `refresh_token_expires_in` in the response. Present = Testing, absent = published. `python scripts\x_watchdog.py --force-token-check --dry-run` does it and names the days left. Measured 2026-11-01: both channels had 6 days left |
 | `invalid_grant` immediately after re-consent | the previous grant was revoked, or more than the per-client token limit exists | revoke at `myaccount.google.com/permissions`, consent again |
 | `HTTP 403 quotaExceeded` on insert | the 100/day `videos.insert` bucket is spent | wait for midnight PT, or request more quota |
 | Consent succeeded but the wrong channel appears | two clients, two browser sessions, one Google login | revoke and redo with the right account; always read back the channel title |

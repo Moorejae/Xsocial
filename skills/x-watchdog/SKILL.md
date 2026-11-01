@@ -40,6 +40,26 @@ a pass happened recently, and it sends a **daily heartbeat** whose absence is it
 | a posting hour passed by 45 min with fewer posts than slots | a render that keeps failing, or a credential that gated every attempt |
 | `youtube_upload.granted_scopes(wf)` lacks `youtube.upload` | a re-consent that came back without the YouTube permission — it looks healthy and cannot post |
 | after `--deadline-hour` (18) nothing posted today | a whole day lost quietly |
+| `refresh_token_expires_in` present in the refresh response (once a day) | **the OAuth app is still in Testing**, so both channels stop with `invalid_grant` in 7 days |
+
+### The 7-day bomb, and the tell that needs no console
+
+An OAuth app left in **Testing** issues refresh tokens that die after 7 days. Nothing in the stored token
+file records that, and the console is a web page you have to remember to open. The measurable tell is in the
+refresh response itself:
+
+```powershell
+python scripts\x_watchdog.py --force-token-check --dry-run
+#   - jephter: refresh token expires in 7 day(s) — the OAuth app is in Testing, so publishing will stop
+```
+
+`refresh_token_expires_in` is present **only** while the app is unpublished. When it disappears, the app is
+live and the tokens are permanent. Measured 2026-11-01: both channels returned it, six days before the
+schedule would have died — found by accident while checking something else, which is precisely why it is now
+a check.
+
+The fix is a console action, not code: APIs & Services → OAuth consent screen → **Publish app**, then
+re-consent each channel once (`youtube_auth.py --serve`) so the new token carries the longer life.
 
 ## Two rules this project paid for
 
