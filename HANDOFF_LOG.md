@@ -4,6 +4,95 @@ Newest first. Every change gets an entry, with evidence. See [AGENTS.md](AGENTS.
 
 ---
 
+## 2026-11-01 (whisper removed from emmanuel by changing the cue; scripts rewritten to the owner's own examples)
+
+**Plane(s):** this folder only. No server change, no OAuth work, keys not rotated (owner's instruction).
+
+**Asked:** "the emmanuel voice is still whispery... remove the whisper. and again the script isnt nice" — with two
+reference scripts supplied as the standard: jephter as a first-person confession (*"I thought I was fine without
+you... But some nights... Some mornings... until one day I stopped fighting it"*), emmanuel as direct imperative
+advice (*"Love them in the quiet ways. Put your phone down when they talk... that's the real measure of how much you
+love them"*).
+
+**The insight that mattered:** the voice was never wrong — **the cue was**. Swapping voices to fix delivery throws
+away the timbre the owner liked; changing one bracketed phrase keeps it.
+
+**Changed:**
+
+| File | Change | Why |
+| :--- | :--- | :--- |
+| `config/workflows.json` | emmanuel `voice.cue` → `[speaking warmly and softly, in a calm clear voice]`; jephter keeps the whisper cue | see the measurement below |
+| `config/workflows.json` | `video.phrases` 6 → **8**, `target_words` 85, `max_words` 95 (both) | the reference scripts are 74-80 words; 6 lines could not carry the shape |
+| `scripts/x_script.py` | `CHANNEL_BRIEF`: jephter confesses, emmanuel instructs, with the exact shape of each. Shared rules now say **"do not describe a physical scene"** | the old brief asked for "a kitchen light, a hand on a back" — which is what the owner called not nice |
+| `scripts/x_script.py` | `truncated()` with **STRICT** and **LOOSE** word sets; every line is checked, not just the ending | a generated line ended *"…because real devotion requires no."* |
+| `scripts/x_render.py` | `fresh_emotion()` deprioritises `motion: high` | a still frame from a fast pan is motion blur |
+
+### Measured: whisper vs clear, same voice
+
+```text
+jephter  cue "[speaking slowly and softly, almost in a whisper]"   narration mean -22.8 dB
+emmanuel cue "[speaking warmly and softly, in a calm clear voice]"  narration mean -17.6 dB
+```
+
+A **5.2 dB** difference in the finished narration, same voice, same script rules. On a 14-word test line the clear
+cue read at -15.1 dB / 0.140 quiet ratio against the whisper cue's -16.8 dB / 0.208 — louder and with far less
+breath.
+
+### The scripts, after the rewrite
+
+```text
+jephter  (89 words, 8 lines)
+ 1. I was convinced that needing no one was my greatest strength.
+ 2. But some nights, the quiet kindness you offered made that strength feel like a punishment.
+ 3. Some mornings, I caught myself waiting for you before I could even begin.
+ 4. You never rushed my fear or demanded that I prove myself.
+ 5. Until one day I noticed how easy it had become to stop defending myself.
+ 6. And I realized that being loved by you was never a trap.
+ 7. I do not want this safe distance anymore.
+ 8. I want to need you.
+
+emmanuel (87 words, 8 lines)
+ 1. Listen to their whole story without interrupting to fix it.
+ 2. Put your pride down the moment an argument starts.
+ 3. Forgive them quickly because holding a grudge only builds a wall between your hearts.
+ 4. Speak up for them when they are not in the room.
+ 5. Choose them on the quiet ordinary days, not just during the highlights.
+ 6. Give them your undivided eyes because partial presence is just polite distance.
+ 7. Stay steady when their world becomes loud and uncertain.
+ 8. That is the measure of a devotion that never breaks.
+```
+
+Both follow the supplied examples' structure: the claim → contradiction → turn → quiet want for jephter; commands →
+two "because" clauses → a named standard for emmanuel.
+
+**Verified:**
+
+```text
+jephter_20261101-0923_48s.mp4   47.9 s  under_cap=True   14 cuts  emotion 14/14  weather 14/14  black none
+emmanuel_20261101-0924_42s.mp4  42.4 s  under_cap=True   11 cuts  emotion 11/11  weather 11/11  black none
+motion after the preference: jephter low 5 / mid 6 / high 3;  emmanuel low 8 / mid 2 / high 1
+```
+
+Frames were extracted and looked at: emmanuel is a couple holding hands under night flowers — the right picture for
+*"Give them your undivided…"*. jephter's 20 s frame is still soft-focus; 3 of 14 cuts remain high-motion because a
+54-clip library cannot always supply a calm clip that matches the line's emotion. That is a library limit, not a
+picker bug — more calm footage would fix it.
+
+### Dead ends — do not repeat
+
+| Attempted | Result |
+| :--- | :--- |
+| putting auxiliaries in the dangling-word list | rejected `It never did.` and `That is.` — auxiliaries are main verbs at the end of short lines |
+| a dangling list with no ellipsis words | let `…requires no.` through |
+| the same list including `of`/`to` strictly | threw away `…before I remembered not to.` and `…they are not part of.`, dropping a script from 89 words to 49 |
+| asking for "8-18 words per line" | three failed attempts and a 49-word script; replaced with "each one complete thought" |
+
+**Left open:** the pipeline is not scheduled or uploading. The owner intends to add both channels' emails to the
+existing ForChi OAuth scope — worth noting that this puts three channels' uploads into one project's
+`videos.insert` bucket, which is **100 per day shared**, not 100 each.
+
+---
+
 ## 2026-11-01 (emotion labels for all three libraries; ForChi Shorts on the Leda voice; per-channel script briefs)
 
 **Plane(s):** this folder, and `C:\Users\hp\forchi` (its working tree — **nothing committed there**, its owner

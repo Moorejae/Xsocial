@@ -206,16 +206,26 @@ def pick_cuts(workflow: str, phrases: list[str], seg_durs: list[float], wf: dict
         """
         if not emotion:
             return None
-        for require_weather in ((True,) if weather else (False,)):
+
+        def motion_ok(c: dict) -> bool:
+            return c.get("motion") in (None, "low", "mid")
+
+        # Passes, best first. High-motion clips are deprioritised, not banned: a frame grabbed from a
+        # fast pan is motion blur, which reads as a mistake on a still — measured on the 2026-11-01
+        # jephter render, where a 20 s frame was an unreadable smear.
+        passes = [
+            lambda c: motion_ok(c) and (not weather or c.get("weather") in weather),
+            motion_ok,
+            lambda c: not weather or c.get("weather") in weather,
+            lambda c: True,
+        ]
+        for predicate in passes:
             for pool_tier in tiers:
                 for c in pool_tier:
                     if c["file"] in used or c["file"] in recent:
                         continue
-                    if c.get("emotion") != emotion:
-                        continue
-                    if require_weather and c.get("weather") not in weather:
-                        continue
-                    return c
+                    if c.get("emotion") == emotion and predicate(c):
+                        return c
         for pool_tier in tiers:                    # accept a repeat before accepting a wrong feeling
             for c in pool_tier:
                 if c["file"] not in used and c.get("emotion") == emotion:

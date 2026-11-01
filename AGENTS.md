@@ -342,9 +342,9 @@ channel's trouble never becomes the other's.
 | Google Cloud project | **one per client.** Quota is per project, so a shared project couples the two workflows |
 | OAuth client + refresh token | one per client, obtained in that client's own console |
 | Gemini keys | 9 / 9, disjoint (`config/gemini-pools.json`). A key is never in both pools |
-| Voice persona | **Leda on all three** (jephter, emmanuel, ForChi Shorts) — the owner's explicit choice on 2026-11-01, reversing the earlier "must differ" rule. `Umbriel` is the closest distinct alternative if they ever need to diverge |
+| Voice persona | **Leda on all three** (jephter, emmanuel, ForChi Shorts). The channels differ by **cue**, not voice: jephter whispers (-22.8 dB), emmanuel reads clear and warm (-17.6 dB). `Umbriel` is the closest distinct voice if they ever need to diverge |
 | Media (videos, music) | separate folders per workflow, and separate labels |
-| Script subject | jephter: how it feels to be loved and to love back (expressive, mindful). emmanuel: how to love intentionally, unconditionally, unapologetically (devotional, deliberate) |
+| Script shape | jephter **confesses** (first person, absent "you", claim → contradiction → turn → quiet want). emmanuel **instructs** (imperative, concrete commands, → a named standard). Neither describes a physical scene: they talk, they do not stage |
 | Song used | separate libraries; the same track never repeats within 3 videos, and the excerpt starts somewhere different every time |
 | Schedule | separate, so a failed run on one cannot blank the other's day (nothing is scheduled yet) |
 

@@ -53,9 +53,41 @@ d = abs(wps - ref_wps) * 3 + abs(quiet - ref_quiet) * 12 + abs(mean_db - ref_mea
 
 | voice | duration | w/s | mean dB | quiet ratio | note |
 | :--- | ---: | ---: | ---: | ---: | :--- |
-| **Leda** | 6.76 s | 2.66 | **-29.5** | 0.196 | **both channels** (owner's choice, 2026-11-01) and **ForChi Shorts** |
-| Pulcherrima | 5.08 s | 2.95 | -28.9 | 0.231 | was emmanuel; rejected by ear — the fastest read of the field |
-| Umbriel | 7.17 s | 2.09 | -26.7 | 0.156 | closest distinct alternative to Leda (gap 0.002); the fallback if the channels ever diverge |
+| **Leda** | 6.76 s | 2.66 | **-29.5** | 0.196 | jephter, **with the whisper cue**; ForChi Shorts |
+| **Leda (calm, clear)** | — | — | -16.8 | 0.140 | **emmanuel** — same voice, whisper cue removed |
+| Umbriel | 7.17 s | 2.09 | -26.7 | 0.156 | closest alternative to Leda (gap 0.002) |
+| Pulcherrima | 5.08 s | 2.95 | -28.9 | 0.231 | rejected by ear — fastest read of the field |
+| Aoede | 8.12 s | 2.22 | -26.8 | 0.192 | |
+| Achernar | 6.96 s | 2.59 | -26.1 | 0.216 | |
+| Vindemiatrix | 8.05 s | 2.24 | -24.6 | 0.136 | flattest — fewest pauses |
+| Sulafat | 8.04 s | 2.24 | -20.7 | 0.170 | loudest — not a whisper |
+| Despina | 12.08 s | **1.49** | -23.0 | 0.220 | too slow: ~57 s for an 85-word script, breaks the cap |
+
+### Two channels, one timbre, two deliveries (2026-11-01, second revision)
+
+The owner liked jephter's voice, then said of emmanuel: *"the emmanuel voice is still whispery... remove the
+whisper"*. The voice was never the problem — **the cue was**. So both channels keep Leda and differ in delivery:
+
+| workflow | cue | measured narration level |
+| :--- | :--- | ---: |
+| jephter | `[speaking slowly and softly, almost in a whisper]` | **-22.8 dB** |
+| emmanuel | `[speaking warmly and softly, in a calm clear voice]` | **-17.6 dB** |
+
+Measured on a 14-word line: the calm-clear cue reads at **-15.1 dB with 0.140 quiet ratio**, against the whisper
+cue's -16.8 dB / 0.208 — louder, with noticeably less breath. That is a **5.2 dB** difference in the finished
+narration, which is the difference between a stage whisper and a warm read.
+
+This is the useful pattern to remember: **to change how a voice sounds, change the cue, not the voice.** Swapping
+voices to fix delivery throws away the timbre the owner liked; changing one bracketed phrase fixes delivery and
+keeps it.
+
+The pair must stay distinguishable, so do not simply use Leda for both — except that on 2026-11-01 the owner asked
+for exactly that: *"replace emmanuel's voice with the current forchi's voice"*, after asking that ForChi Shorts use
+"the voice you are currently using for jephtah's video". So **Leda is now the voice of jephter, emmanuel and ForChi
+Shorts**, with the cue separating the two X channels. That is a deliberate reversal of the earlier "voices must
+differ" rule and it is the owner's call; it is recorded here rather than quietly dropped. Umbriel is the closest
+distinct alternative (pace 2.09 w/s, pause-profile gap 0.002 from Leda) and is a one-word change in
+`config/workflows.json`.
 | Aoede | 8.12 s | 2.22 | -26.8 | 0.192 | |
 | Erinome | 8.16 s | 2.21 | -27.0 | 0.271 | breathy, louder than Pulcherrima |
 | Achernar | 6.96 s | 2.59 | -26.1 | 0.216 | |

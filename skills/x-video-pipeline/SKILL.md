@@ -106,6 +106,39 @@ taken from a different place every time:
 Golden-ratio steps rather than a linear cursor because a linear cursor creeps forward and adjacent videos end up
 sharing a phrase of the melody — which is exactly what "the same sound" means to a listener.
 
+## The script's shape, per channel
+
+The owner supplied reference scripts on 2026-11-01 and they define "nice" better than any adjective. Both are
+carried in `x_script.CHANNEL_BRIEF`; the config `script` block only tunes subject and bans.
+
+| | jephter | emmanuel |
+| :--- | :--- | :--- |
+| Verb | **confesses** | **instructs** |
+| Person | first person "I", addressing an absent "you" | second person imperative, "Love them…" |
+| Shape | a claim I made to myself → "But some nights…" / "Some mornings…" → a **turn** ("Until one day…", "And I realised…") → a quiet want, short | 6-9 commands, each something a person can actually do → at most two "because" clauses → a closing line that **names the standard** |
+| Never | advice, explanations of the feeling, locations, objects, body parts | therapy vocabulary, listicle tone, a summary of the list |
+
+Rules that apply to both, and each came from a delivered video that was wrong without them:
+
+- **No scene, no bodies.** The first generation described a hand at a neck and a kitchen light; the owner's
+  verdict was *"the script isn't nice"*. The reference scripts describe **no physical action at all** — they talk.
+- **Fragments are allowed.** `It never did.` and `Not anymore.` are legitimate lines, so the line filter accepts two
+  words and the truncation guard must not reject them (see below).
+- **The turn is what makes it a story, not sadness.** Without "Until one day…" the jephter script is just complaint.
+
+### The truncation guard, and how to get it wrong twice
+
+`x_script.truncated()` exists because a model that runs out of room does not fail — it stops mid-sentence, and the
+result reads as a mistake on screen. Getting the word list right took three attempts:
+
+| Version | Failure |
+| :--- | :--- |
+| one word list incl. auxiliaries | rejected `It never did.` and `That is.` — auxiliaries are main verbs at the end of short lines |
+| list without ellipsis words | let `…because real devotion requires no.` through (a dangling determiner) |
+| **current: STRICT + LOOSE** | **STRICT** (`the, a, of, and, your, my, no, not, very, too, every, all…`) is always a truncation. **LOOSE** (`to, in, on, of, for, as, that, with, because…`) is only a truncation on a line of **8 words or fewer** — which is how `…before I remembered not to.` and `…conversations they are not part of.` survive while `You just stand together in.` is caught |
+
+An over-eager guard is not a safe default: dropping one good line took a script from 89 words to 49.
+
 ## Captions and watermark
 
 - `.ass` file, `PlayResX/Y` 1080×1920, `Alignment=2` (bottom centre), `MarginV` from config.
@@ -141,6 +174,7 @@ is the replacement and is what runs here.
 
 | Symptom | Cause | Fix |
 | :--- | :--- | :--- |
+| A clip looks blurry on a still frame | a high-motion source caught mid-pan; `scale`+`crop` cannot fix blur that is in the footage | the picker deprioritises `motion: high` (passes: mood+weather+calm → mood+calm → mood+weather → mood). Measured after: jephter 11/14 and emmanuel 10/11 cuts on low/mid motion |
 | Black bars top and bottom inside the picture | the **source clip** is letterboxed, so the bars survive `scale`+`crop` | `x_media.py --bars <wf>` records the content rect via `cropdetect`; the renderer crops to it before scaling. 6 of 97 clips were affected |
 | A cut goes **fully black** for up to ~0.7 s | stock clips fade up from / down to black, and a cut starting at frame 0 shows that fade. Measured: black spans at 21.9 s, 29.4 s and 34.1 s in one video, each exactly on a clip boundary | `--bars` also records `trim_in`/`trim_out` via `blackdetect`; `clean_source()` builds a **trimmed cached copy** and the segment loops *that*, so a loop wrap cannot re-show the fade. 21 of 97 clips were affected |
 | A "letterboxed" clip still shows bars, or a fixed clip still flashes black | `content`/`trim_*` were never measured (added after labelling) | run `--bars <wf>`; it backfills without re-measuring everything |
