@@ -4,6 +4,85 @@ Newest first. Every change gets an entry, with evidence. See [AGENTS.md](AGENTS.
 
 ---
 
+## 2026-11-01 (scheduler: production apart from posting, 2/day per channel, jittered slots)
+
+**Plane(s):** this folder only.
+
+**Asked:** "use the same schedular as forchi, seperate the production time and posting time... just 2 videos per
+day for both and seperate their posting time using jotting [jitter]." Also: the callback URIs were added in the
+console.
+
+**Changed:**
+
+| File | Change |
+| :--- | :--- |
+| `config/workflows.json` | `schedule` block per workflow: `timezone` Africa/Lagos, `daily_count` 2, `produce_hours` [7, 14], `post_hours` [10, 17], jitter base 0 (jephter) / 25 (emmanuel) + daily span 15, `max_attempts_per_slot` 3, `retry_minutes` [10, 25] |
+| `scripts/x_scheduler.py` | **new.** Mirrors ForChi's `slots.js` + `scheduler.js`: one source of truth for slots, same-slot retries, a state file, `--once` for an external timer and `--daemon` for a loop |
+| `skills/x-publishing` | a "daily schedule" section with the ForChi comparison table and the Task Scheduler command |
+| `AGENTS.md` | file map + the independence row for the schedule |
+
+### The two deliberate differences from ForChi
+
+1. **Production is not posting.** ForChi renders *at* the posting slot, so a slow render or a TTS retry eats the
+   slot. Here rendering happens at 07:00 and 14:00; the 10:00 and 17:00 slots only upload something that already
+   exists.
+2. **The channels never post in the same minute.** Jitter is per channel: jephter `+0..15` min, emmanuel
+   `+25..40` min. Deterministic per `(channel, day, slot)` via sha256, so a re-run an hour later computes the same
+   minute — a random offset would move the slot on every wake-up and "did we post at 10:12?" would have no answer.
+
+### Verified
+
+```text
+python scripts\x_scheduler.py --verify
+2026-11-01  (today)
+  jephter   prod #0 07:00    jephter   prod #1 14:00
+  jephter   post #0 10:05    jephter   post #1 17:00
+  emmanuel  prod #0 07:00    emmanuel  prod #1 14:00
+  emmanuel  post #0 10:34    emmanuel  post #1 17:37
+
+  posting order: 10:05 jephter | 10:34 emmanuel | 17:00 jephter | 17:37 emmanuel
+  separation:    29 min, 386 min, 37 min        (no two posts under 5 minutes)
+```
+
+The credential gate, proved by running a pass with no token:
+
+```text
+python scripts\x_scheduler.py --once --no-produce --dry-run
+  credential: NOT ready — posting is gated, no attempt will be consumed
+  post 10:05: gated (no credential)
+  next action: produce at 14:00          <- a future slot, not one already past
+
+python scripts\x_scheduler.py --status   ->  every slot attempts=0
+```
+
+That gate exists because a missing token must not consume one of a slot's three attempts — the day would be lost
+to a problem the schedule cannot fix. It is the same reasoning as ForChi's `authGate.youtubeReady()`, which runs
+before build *and* publish for exactly this class of failure.
+
+The produce path, run for real through the scheduler:
+
+```text
+python scripts\x_scheduler.py --once --workflow jephter
+  produce 07:00: jephter_20261101-130413.mp4      <- rendered by the slot, recorded in the state file
+  post 10:05: gated (no credential)
+```
+
+### Still the owner's two steps
+
+1. The callback URIs are in the console (owner has done this). Confirm the consent screen no longer answers
+   `redirect_uri_mismatch`.
+2. Sign in once per channel, as that channel's account:
+
+```powershell
+python scripts\youtube_auth.py --workflow jephter
+python scripts\youtube_auth.py --workflow emmanuel
+```
+
+Then register the trigger (§ x-publishing → "Scheduling"): every 15 minutes calling
+`x_scheduler.py --once --privacy public`. Until a token exists, posting stays gated and no attempts are burned.
+
+---
+
 ## 2026-11-01 (ForChi restricted to the two X formats and committed; libraries relabelled; YouTube posting automated)
 
 **Plane(s):** this folder, and `C:\Users\hp\forchi` (**committed there this time — the owner asked for it to

@@ -90,24 +90,69 @@ bytes have already been uploaded it refuses.
 Three channels in one project therefore share **100 uploads a day**, not 100 each. At one video per channel
 per day that is 3 of 100 — ample. It only matters if a retry loop or a backfill is ever written.
 
+## The daily schedule — production apart from posting
+
+Modelled on ForChi's `slots.js` + `scheduler.js`, with two deliberate differences. Configuration lives in
+`config/workflows.json` → `schedule`, one source of truth:
+
+```json
+"schedule": {
+  "timezone": "Africa/Lagos",
+  "daily_count": 2,
+  "produce_hours": [7, 14],
+  "post_hours": [10, 17],
+  "jitter_base_minutes": 0,          // 25 for emmanuel
+  "jitter_day_span_minutes": 15,
+  "max_attempts_per_slot": 3,
+  "retry_minutes": [10, 25]
+}
+```
+
+| ForChi | Here | Why the difference |
+| :--- | :--- | :--- |
+| renders *at* the posting slot | **produce at 07:00 / 14:00, post at 10:00 / 17:00** | a slow render or a TTS retry cannot eat the posting time |
+| fixed slots, no jitter | fixed slots **plus per-channel jitter** | the owner asked for the channels to post at different times: jephter +0-15 min, emmanuel +25-40 min, so they are ≥10 minutes apart by construction and still vary day to day |
+| 2/day, one channel | **2/day per channel** | four uploads a day across three channels is 4 of the 100 `videos.insert` calls a day |
+
+Jitter is **deterministic** per `(channel, day, slot)` — `sha256` of that tuple. A random offset would move
+the slot every time the scheduler woke and "did we post at 10:12?" would have no answer.
+
+Same-slot retries are kept: 3 attempts with 10 then 25 minute backoff, so one transient failure does not
+push the next attempt to the following slot ~7 hours later.
+
+```powershell
+python scripts\x_scheduler.py --verify          # today's slots and the separation between them
+python scripts\x_scheduler.py --status          # produced / posted / attempts, per slot
+python scripts\x_scheduler.py --once            # one pass: whatever is due
+python scripts\x_scheduler.py --daemon          # loop, waking every 5 minutes
+```
+
+**A missing credential is a gate, not a failure.** `credential_ready()` checks for a refresh token with no
+network call; if it is absent the posting slot is marked `gated` and **no attempt is consumed**. ForChi
+learned the neighbouring lesson the expensive way — `authGate.youtubeReady()` runs before build *and*
+publish, because six builds once succeeded and every publish then failed.
+
 ## Scheduling — two ways, pick one
 
-**A. Windows Task Scheduler** (simplest: the clip libraries and `out/` live on this workstation).
+**A. Windows Task Scheduler** (simplest: the clip libraries and `out/` live on this workstation). Trigger
+the scheduler rather than `x_publish`, so production and posting both happen on time:
 
 ```powershell
 $action  = New-ScheduledTaskAction -Execute 'python' `
-  -Argument 'C:\Users\hp\Downloads\X\scripts\x_publish.py --workflow both --privacy public --render-missing' `
+  -Argument 'C:\Users\hp\Downloads\X\scripts\x_scheduler.py --once --privacy public' `
   -WorkingDirectory 'C:\Users\hp\Downloads\X'
-$trigger = New-ScheduledTaskTrigger -Daily -At 09:00
-Register-ScheduledTask -TaskName 'X daily publish' -Action $action -Trigger $trigger `
-  -Description 'Publishes one short per channel, idempotent'
+$trigger = New-ScheduledTaskTrigger -Once -At (Get-Date).Date.AddMinutes(5) `
+  -RepetitionInterval (New-TimeSpan -Minutes 15)
+Register-ScheduledTask -TaskName 'X scheduler' -Action $action -Trigger $trigger `
+  -Description 'Produces at 07:00/14:00 and posts at 10:00/17:00 with per-channel jitter'
 ```
 
-**B. systemd timer on the VPS** — only once the media is synced there (`bootstrap_vps.py` prepares the box
-but does not copy the libraries). Then `OnCalendar=*-*-* 09:00` calling the same command.
+Every 15 minutes, `--once` does nothing until a slot is due. That is what makes a missed trigger
+self-healing rather than a hole in the schedule. `--daemon` is the alternative if a task that never exits is
+preferred; a chatty loop is easier to watch, an external trigger is easier to see failing.
 
-Either way the wrapper is safe to run **hourly**: it exits early when today's video is already out, which is
-what makes a missed run self-healing instead of a gap in the schedule.
+**B. systemd timer on the VPS** — only once the media is synced there (`bootstrap_vps.py` prepares the box
+but does not copy the libraries). Then a `*.timer` with `OnCalendar=*:0/15` calling the same `--once`.
 
 ## Failure catalogue
 

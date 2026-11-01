@@ -347,7 +347,7 @@ channel's trouble never becomes the other's.
 | Media (videos, music) | separate folders per workflow, and separate labels |
 | Script shape | jephter **confesses** (first person, absent "you", claim → contradiction → turn → quiet want). emmanuel **instructs** (imperative, concrete commands, → a named standard). Neither describes a physical scene: they talk, they do not stage |
 | Song used | separate libraries; the same track never repeats within 3 videos, and the excerpt starts somewhere different every time |
-| Schedule | separate, so a failed run on one cannot blank the other's day (nothing is scheduled yet) |
+| Schedule | separate: **produce 07:00 / 14:00, post 10:00 / 17:00** Africa/Lagos, 2 videos/day each, with per-channel jitter so the two never post in the same minute |
 
 ### The video brief, as the owner set it
 
@@ -368,7 +368,8 @@ waterfall as ForChi (a key that is refused or out of quota is demoted, and the n
 | `scripts/label_emotions.py` | emotion (`happy sad excited angry calm love fear surprise`) + weather labels; also labels ForChi's pool with `--forchi` | `python scripts\label_emotions.py --workflow jephter` |
 | `scripts/forchi_proof.py` | runs ForChi's chain in an X writing format and delivers the mp4 to Downloads | `python scripts\forchi_proof.py --format both` |
 | `scripts/youtube_upload.py` | resumable upload, ledger-guarded, private by default | `python scripts\youtube_upload.py --workflow jephter --check` |
-| `scripts/x_publish.py` | the daily run: render if missing, upload once, never twice | `python scripts\x_publish.py --workflow both` |
+| `scripts/x_publish.py` | one-shot publish of what exists: render if missing, upload once, never twice | `python scripts\x_publish.py --workflow both` |
+| `scripts/x_scheduler.py` | the daily schedule: produce 07:00/14:00, post 10:00/17:00 with per-channel jitter, 2/day each | `python scripts\x_scheduler.py --verify` |
 | `config/songs/<wf>.json` | the measured song manifest | same command |
 | `scripts/gemini_keys.py` | key split, rotation, model ladder, TTS, validation | `python scripts\gemini_keys.py --audit` |
 | `scripts/x_media.py` | label clips and songs; `--vision` adds subject/baked-text | `python scripts\x_media.py --label jephter` |
