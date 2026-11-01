@@ -59,19 +59,26 @@ the path whenever the variable is not `gemini`.
 face.", …)` through ForChi's own module returned one `p1.wav`, **5.12 s / 251,876 bytes** — 12 words at
 2.34 words/s, which is Leda's pace.
 
-## 2. The two X writing formats are now ForChi's Shorts formats
+## 2. The two X writing formats run alongside ForChi's own — they do not replace them
 
-`tools/_video_script.py` gained `X_FORMATS = {"confession", "devotion"}` — the jephter and emmanuel writing
-formats — and `next_x_format(history)` **alternates** them, so consecutive Shorts do not share a shape.
+`tools/_video_script.py` carries `X_FORMATS = {"confession", "devotion"}` — the jephter and emmanuel writing
+formats — plus `next_x_format(history)` to alternate them. **They are an extra option, not the house style.**
+The owner's correction on 2026-11-01: ForChi's existing format must keep running unchanged, with the X formats
+side by side.
 
 ```python
-script = vs.generate_script_checked()                    # rotates confession -> devotion -> confession
-script = vs.generate_script_checked(style="devotion")    # or force one
-script = vs.generate_script_checked(style="victor")      # personality persona still available by name
+script = vs.generate_script_checked()                  # ForChi's own format, exactly as before
+script = vs.generate_script_checked(style="confession")  # one of the X formats, on request
+script = vs.generate_script_checked(style="romantic")    # any ForChi style is honoured again
 ```
 
-`generate_script()` now selects the prompt with `X_FORMATS.get(style, PERSONA_PROMPT)`, and the "expand this to
-length" round no longer tells an X-format script to follow the Victor aphorism→subversion→anchor formula.
+`resolve_style(style, history)` is the single seam. A named style is honoured; naming nothing keeps the Victor
+Moore persona; the only thing that mixes an X format into the default run is `X_FORMAT_EVERY=n`, which is **0
+(off) by default**:
+
+```powershell
+$env:X_FORMAT_EVERY = 3      # every 3rd Short uses confession/devotion, alternating
+```
 
 | Format | Voice | Shape |
 | :--- | :--- | :--- |
@@ -80,6 +87,10 @@ length" round no longer tells an X-format script to follow the Victor aphorism�
 
 Both ban scene description — no hands, rooms, weather or objects — because that is what the owner's own reference
 scripts do, and what he called "nice".
+
+**The dead end, recorded:** an earlier commit (`d5b3981`) made the X formats the *only* formats and replaced any
+other style inside `generate_script_checked`. Do not reintroduce that. The owner wants both, and a caller that
+passes no style must get ForChi's own writing.
 
 ## 3. Producing a proof, and three traps in that path
 

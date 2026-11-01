@@ -126,6 +126,7 @@ Skills learned *in this project* go in `X\skills\<name>\SKILL.md`, same format a
 | **`x-vps-access`** | Reaching `169.58.212.7`; the `ssh`-on-PATH trap; key-then-password connection. |
 | **`x-gemini-key-pool`** | Anything touching Gemini keys or script writing: a failed generation, a 404/503/429, adding or rebalancing keys, or printing a config value. |
 | **`x-google-console-oauth`** | Creating or fixing a client's OAuth client, consent-screen rejection, uploads that die after a week, or moving the privacy/terms pages to a real domain. |
+| **`x-watchdog`** | A video did not appear, "is the schedule still alive", adding an alert or heartbeat, or any Windows task that "just does not run". |
 | **`x-video-pipeline`** | Producing a short for either channel; a render with no audio, no captions, the wrong font or the wrong length; a song or clip that keeps recurring. |
 | **`x-voice-personas`** | A video that sounds wrong, fast, loud or not whispery; choosing a voice; keeping the two channels' voices distinct; TTS mime or 429 problems. |
 | **`x-test-video`** | The owner asks for a video, a test video, a sample or a re-render. It carries the delivery convention — `--deliver` puts the file and its report in `C:\Users\hp\Downloads`. |
@@ -257,6 +258,23 @@ Nothing you ship may depend on another thing running, and nothing may fail silen
 Full detail: `build-fallbacks` in the skill library. A fallback that has never been observed firing is a hope, not a
 fallback — test it.
 
+**This is no longer theory on this project** (2026-11-01). The ladder is built and both mail paths have been
+observed arriving:
+
+| Rung | Implementation | Check it |
+| :--- | :--- | :--- |
+| L0 | 3 attempts per slot, 10 then 25 min, only where a retry is safe (the upload ledger claims first) | `x_scheduler.py --status` |
+| L1 | Task Scheduler, every 15 min, `-AllowStartIfOnBatteries -StartWhenAvailable` | `Get-ScheduledTaskInfo 'X daily publish'` |
+| L2 | `scripts/x_watchdog.py` — log freshness, overdue slots, granted scope, nothing-posted-today | `python scripts\x_watchdog.py --dry-run` |
+| L3 | SMTP → `ALERT_EMAIL`, WHAT / WHY / TRIED / ACTION | `python scripts\x_watchdog.py --test-mail` |
+| L4 | daily heartbeat after 19:00; `out\.heartbeat` holds the last date it sent | `Get-Content out\.heartbeat` |
+
+**Why the timer was invisible** — and the reason L2 exists: a Windows task inherits
+`DisallowStartIfOnBatteries = True`, so on a laptop it is skipped with no error, no log and no counter anyone
+reads. That happened here for **seven consecutive passes** before anyone noticed. A job whose output is not
+redirected to a file is untraceable for the same reason: `scripts/x_daily.cmd` and `scripts/x_watchdog.cmd` exist
+purely to redirect.
+
 ---
 
 ## 9. Credentials and safety
@@ -371,6 +389,8 @@ waterfall as ForChi (a key that is refused or out of quota is demoted, and the n
 | `scripts/x_publish.py` | one-shot publish of what exists: render if missing, upload once, never twice | `python scripts\x_publish.py --workflow both` |
 | `scripts/x_scheduler.py` | the daily schedule: produce 07:00/14:00, post 10:00/17:00 with per-channel jitter, 2/day each | `python scripts\x_scheduler.py --verify` |
 | `scripts/x_daily.cmd` | what Task Scheduler actually runs: one `--once` pass, output appended to `out\scheduler.log` | `Get-Content out\scheduler.log -Tail 10` |
+| `scripts/x_watchdog.py` | L2/L3/L4: log freshness, overdue slots, credential scope, a WHAT/WHY/TRIED/ACTION email, and a daily heartbeat | `python scripts\x_watchdog.py --dry-run` |
+| `scripts/x_watchdog.cmd` | what the watchdog task runs, so a watchdog failure is also logged | `Get-Content out\watchdog.log -Tail 5` |
 | `config/songs/<wf>.json` | the measured song manifest | same command |
 | `scripts/gemini_keys.py` | key split, rotation, model ladder, TTS, validation | `python scripts\gemini_keys.py --audit` |
 | `scripts/x_media.py` | label clips and songs; `--vision` adds subject/baked-text | `python scripts\x_media.py --label jephter` |
@@ -431,7 +451,8 @@ rest. If that ever stops being true, the page text has to change in the same com
   That is exactly how seven passes were lost to `DisallowStartIfOnBatteries`. The L2 watchdog and the L3 email
   from §8 are the next rung.
 - **Scheduling and the L1–L4 rungs** from §8: systemd supervision, a watchdog, an email on exhaustion, and an
-  external heartbeat. Nothing runs unattended today.
+  external heartbeat. The watchdog, the email and the heartbeat exist on this workstation (see §8); what is still
+  missing is the check from **outside** the machine.
 - **Voice cloning.** Both channels are on Gemini TTS today. A real clone per workflow (F5-TTS, as ForChi uses) needs
   one reference clip per workflow; `x_voice.synthesize_phrase` is the seam.
 - **TTS quota** is the tightest limit in the pipeline. It ran out mid-build on 2026-10-28; see `x-voice-personas`.

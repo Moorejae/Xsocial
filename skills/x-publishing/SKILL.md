@@ -27,7 +27,7 @@ sign in with its own Google account.
 | :--- | :--- | :--- | :--- |
 | `jephter` | `chineduagu598@gmail.com` | confession / expressive | own refresh token |
 | `emmanuel` | `steadfast7878@gmail.com` | devotion / instructional | own refresh token |
-| `forchi` | `aguswigad@gmail.com` | both X formats, alternating | token lives in ForChi's own deployment |
+| `forchi` | `aguswigad@gmail.com` | ForChi's own format; the two X formats are available alongside (`X_FORMAT_EVERY`) | token lives in ForChi's own deployment |
 
 Both new accounts were added to the **same audience** as ForChi's client, so `GOOGLE_CLIENT_ID` /
 `GOOGLE_CLIENT_SECRET` are ForChi's — read from `C:\Users\hp\forchi\.env` in place if this project's `.env`

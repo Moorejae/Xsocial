@@ -4,6 +4,76 @@ Newest first. Every change gets an entry, with evidence. See [AGENTS.md](AGENTS.
 
 ---
 
+## 2026-11-01 (ForChi formats side by side again; the watchdog, the alarm and the heartbeat)
+
+**Plane(s):** this folder and `C:\Users\hp\forchi` (one file). No host touched, no upload.
+
+**Asked:** "i want you to not replace the current forchi format, instead the new formats should run side by side..
+just the voice change nothing else, as for the remaining things for jephtah and emmanuel complete and deploy the
+remaining necessary things also look at the skilll folder and add more skills as you build."
+
+**ForChi — a correction to `d5b3981`.** That commit made the two X formats the only formats and replaced any other
+style inside `generate_script_checked`, which is the opposite of what the owner wants. Fixed in `a3e4816`:
+
+| Was | Now |
+| :--- | :--- |
+| any style not in `X_FORMATS` was replaced by the rotation | a named style is honoured again; naming nothing keeps the Victor Moore persona |
+| no way to run both | `resolve_style(style, history)` is the single seam: explicit `confession`/`devotion`, or `X_FORMAT_EVERY=n` to alternate one in every nth Short — **default 0, so nothing changes until asked** |
+
+The Gemini voice backend from `d5b3981` (`VOICE_BACKEND=gemini`, voice Leda) is untouched, because the owner kept
+that part: "just the voice change nothing else". `next_x_format()` is now tolerant of a hand-edited history file
+(a non-dict entry used to raise `AttributeError`). Eight assertions on `resolve_style` pass, including
+`X_FORMAT_EVERY=garbage → default`.
+
+**X — the remaining rungs of §8, all three observed firing.**
+
+| File | What it is |
+| :--- | :--- |
+| `scripts/x_watchdog.py` | **new.** L2/L3/L4: log freshness (`--max-age`, 45 min), overdue posting slots, `youtube.upload` still granted, nothing-posted-today after `--deadline-hour`, a WHAT/WHY/TRIED/ACTION email, and a once-a-day heartbeat after `--heartbeat-hour` tracked by `out\.heartbeat` |
+| `scripts/x_watchdog.cmd` | **new.** What the task runs, so a watchdog failure is logged rather than lost |
+| `skills/x-watchdog` | **new skill.** The ladder, the two rules this project paid for, and the failure catalogue |
+| `AGENTS.md` | §8 now says the ladder is built here, with the check for each rung; file map and skill table updated; §12 "still open" corrected |
+
+The watchdog turns "no errors" into positive evidence, because that is what the 2026-11-01 failure was: seven
+consecutive passes that never started, with nothing written anywhere to say so.
+
+**Verified — every path actually exercised, not inspected:**
+
+```text
+python scripts\x_watchdog.py --selftest
+ok   parses a pass header and its age (15 min)
+ok   an empty log has no pass, so it cannot look healthy
+ok   a stale pass is measurable and exceeds the limit (420 min)
+ok   the escalation names WHAT / WHY / TRIED / ACTION
+ok   mail settings present: SMTP_HOST, SMTP_USER, SMTP_PASS | recipient configured: yes
+ok   exactly one heartbeat a day, tracked by a dated marker
+ok   log trimming keeps the tail
+
+python scripts\x_watchdog.py --dry-run            ->  healthy
+python scripts\x_watchdog.py --test-mail
+  mail: sent to aguswigad@gmail.com via smtp.gmail.com:587     # L3 observed arriving
+python scripts\x_watchdog.py --heartbeat-hour 0
+  heartbeat: sent to aguswigad@gmail.com via smtp.gmail.com:587 # L4 observed arriving
+  out\.heartbeat -> 2026-11-01
+
+# the timer really is firing since the battery fix, 0 missed:
+out\scheduler.log ->  === jephter · 2026-11-01 15:59 Africa/Lagos ===
+                      === emmanuel · 2026-11-01 15:59 Africa/Lagos ===
+Get-ScheduledTaskInfo 'X daily publish' -> LastRunTime 15:59:02  LastTaskResult 0
+                                           NextRunTime 16:14  NumberOfMissedRuns 0
+
+Start-ScheduledTask 'X watchdog' -> LastTaskResult 0 ; out\watchdog.log -> healthy
+```
+
+The site stayed live for both workflows throughout (all four pages `200`: `/jephter/privacy.html`,
+`/jephter/terms.html`, `/emmanuel/privacy.html`, `/emmanuel/terms.html`), so nothing needed redeploying.
+
+**Left open:** nothing watches `out\watchdog.log` from **outside** the machine — the heartbeat is the compromise,
+and it comes from the machine, so it only covers the case it can cover. A domain → `169.58.212.7` → TLS for the
+pages is still the owner's side. ForChi's `a3e4816` and `d5b3981` are local, unpushed.
+
+---
+
 ## 2026-11-01 (both channels go public — and the scheduled task was silently never running)
 
 **Plane(s):** this folder only. Two `videos.insert` calls, one per channel; nothing else touched.
