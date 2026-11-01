@@ -53,9 +53,9 @@ d = abs(wps - ref_wps) * 3 + abs(quiet - ref_quiet) * 12 + abs(mean_db - ref_mea
 
 | voice | duration | w/s | mean dB | quiet ratio | note |
 | :--- | ---: | ---: | ---: | ---: | :--- |
-| **Leda** | 6.76 s | 2.66 | **-29.5** | 0.196 | **jephter** — quietest read |
-| **Umbriel** | 7.17 s | 2.09 | -26.7 | **0.156** | **emmanuel** — matches Leda's steadiness (gap 0.002) |
-| Pulcherrima | 5.08 s | 2.95 | -28.9 | 0.231 | was emmanuel; **rejected by ear** — fastest read of the field |
+| **Leda** | 6.76 s | 2.66 | **-29.5** | 0.196 | **both channels** (owner's choice, 2026-11-01) and **ForChi Shorts** |
+| Pulcherrima | 5.08 s | 2.95 | -28.9 | 0.231 | was emmanuel; rejected by ear — the fastest read of the field |
+| Umbriel | 7.17 s | 2.09 | -26.7 | 0.156 | closest distinct alternative to Leda (gap 0.002); the fallback if the channels ever diverge |
 | Aoede | 8.12 s | 2.22 | -26.8 | 0.192 | |
 | Erinome | 8.16 s | 2.21 | -27.0 | 0.271 | breathy, louder than Pulcherrima |
 | Achernar | 6.96 s | 2.59 | -26.1 | 0.216 | |
@@ -84,11 +84,16 @@ closeness, a different person. Re-audition against the owner's preferred voice a
 The measurable signal for "sounds wrong" was the **pace**: Pulcherrima read 13 words in 5.08 s — the fastest of every
 candidate — and that is what the ear rejected. When a voice is disliked, check its words/second before its level.
 
-The pair must stay distinguishable, so do not simply use Leda for both: two channels on one timbre defeats the
-independence contract in AGENTS.md §12.
+The pair must stay distinguishable, so do not simply use Leda for both — except that on 2026-11-01 the
+owner asked for exactly that: *"replace emmanuel's voice with the current forchi's voice"*, after asking
+that ForChi Shorts use "the voice you are currently using for jephtah's video". So **Leda is now the
+voice of jephter, emmanuel and ForChi Shorts**. That is a deliberate reversal of the earlier
+"voices must differ" rule and it is the owner's call; it is recorded here rather than quietly dropped.
+Umbriel is the closest distinct alternative (pace 2.09 w/s, pause-profile gap 0.002 from Leda) and is a
+one-word change in `config/workflows.json`.
 
-Re-audition after any TTS model change: `out/audition/<workflow>/audition.json` holds the numbers, and `.wav` files
-sit beside it for a listen.
+Re-audition after any TTS model change: `out/audition/<workflow>/audition.json` holds the numbers, and
+`.wav` files sit beside it for a listen.
 
 ## TTS backends and their quirks
 

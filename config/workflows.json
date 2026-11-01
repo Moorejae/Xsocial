@@ -14,6 +14,11 @@
       "voice_ref": "media/voices/jephter/ref.wav"
     },
     "gemini_pool": "jephter",
+    "script": {
+      "theme": "how it feels to be loved, and how it feels to love someone back",
+      "focus": "expressive and mindful. Notice the small sensations — warmth, breath, weight, light, the sound of the room. Stay inside the feeling rather than describing the event. The listener should recognise a feeling they have had, not watch a scene.",
+      "avoid": "advice, lessons, instructions, moralising, 'you should', 'remember to', any second half that explains the first"
+    },
     "oauth": {
       "home": "/jephter/",
       "privacy": "/jephter/privacy.html",
@@ -78,6 +83,11 @@
       "voice_ref": "media/voices/emmanuel/ref.wav"
     },
     "gemini_pool": "emmanuel",
+    "script": {
+      "theme": "how to love someone intentionally, unconditionally, and unapologetically",
+      "focus": "devotional and deliberate. Show love as a choice made on purpose — staying, choosing again, tenderness that does not ask for anything back. Quiet conviction, no speeches, no lists of advice. The listener should feel capable of loving like that.",
+      "avoid": "platitudes, bullet points, therapy vocabulary, 'communication is key', anything that sounds like a lecture or a listicle"
+    },
     "oauth": {
       "home": "/emmanuel/",
       "privacy": "/emmanuel/privacy.html",
@@ -101,9 +111,9 @@
     "voice": {
       "backend": "gemini",
       "model": "gemini-3.8-flash-tts",
-      "name": "Umbriel",
+      "name": "Leda",
       "cue": "[speaking slowly and softly, almost in a whisper]",
-      "audition_note": "Changed 2026-11-01 at the owner's request: jephter's voice (Leda) was liked, Pulcherrima was not. Re-auditioned 13 voices on an emmanuel line against Leda as the reference. Umbriel is the closest match to Leda's character — quiet ratio 0.156 vs Leda's 0.158 (the same steady, unhesitating pause profile) and 2.09 vs 2.23 words/s — while still being a different timbre, so the two channels stay distinguishable. Pulcherrima was the FASTEST read of the field (2.95 w/s, 5.08 s for 13 words), which is the likely reason it sounded wrong."
+      "audition_note": "Changed 2026-11-01: the owner asked for \"the current forchi's voice\", and on the same day asked that ForChi's Shorts use the voice they love from jephter — Leda. Both channels now share Leda, which is a deliberate reversal of the earlier 'voices must differ' rule and was the owner's explicit call. Umbriel (pause-profile gap 0.002 from Leda) remains the closest distinct alternative if the channels ever need to diverge again; it is a one-word change here."
     },
     "caption": {
       "font": "fonts/Jost-Bold.ttf",

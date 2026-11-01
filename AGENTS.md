@@ -129,6 +129,7 @@ Skills learned *in this project* go in `X\skills\<name>\SKILL.md`, same format a
 | **`x-video-pipeline`** | Producing a short for either channel; a render with no audio, no captions, the wrong font or the wrong length; a song or clip that keeps recurring. |
 | **`x-voice-personas`** | A video that sounds wrong, fast, loud or not whispery; choosing a voice; keeping the two channels' voices distinct; TTS mime or 429 problems. |
 | **`x-test-video`** | The owner asks for a video, a test video, a sample or a re-render. It carries the delivery convention — `--deliver` puts the file and its report in `C:\Users\hp\Downloads`. |
+| **`x-forchi-bridge`** | Anything that reaches into `C:\Users\hp\forchi`: its voice backend, its emotion labels. Read before touching that project from here. |
 
 ---
 
@@ -341,8 +342,9 @@ channel's trouble never becomes the other's.
 | Google Cloud project | **one per client.** Quota is per project, so a shared project couples the two workflows |
 | OAuth client + refresh token | one per client, obtained in that client's own console |
 | Gemini keys | 9 / 9, disjoint (`config/gemini-pools.json`). A key is never in both pools |
-| Voice persona | one voice per workflow, chosen by audition — **Leda** vs **Pulcherrima**, both whispery, deliberately different in breath and steadiness |
+| Voice persona | **Leda on all three** (jephter, emmanuel, ForChi Shorts) — the owner's explicit choice on 2026-11-01, reversing the earlier "must differ" rule. `Umbriel` is the closest distinct alternative if they ever need to diverge |
 | Media (videos, music) | separate folders per workflow, and separate labels |
+| Script subject | jephter: how it feels to be loved and to love back (expressive, mindful). emmanuel: how to love intentionally, unconditionally, unapologetically (devotional, deliberate) |
 | Song used | separate libraries; the same track never repeats within 3 videos, and the excerpt starts somewhere different every time |
 | Schedule | separate, so a failed run on one cannot blank the other's day (nothing is scheduled yet) |
 
@@ -360,7 +362,9 @@ waterfall as ForChi (a key that is refused or out of quota is demoted, and the n
 | :--- | :--- | :--- |
 | `config/workflows.json` | brand, channel, contact, persona, **video/voice/caption/music settings**. No secrets | — |
 | `config/gemini-pools.json` | which **key ids** belong to which workflow. No values | — |
-| `config/scenes/<wf>.json` | the measured + vision-labelled clip manifest | `python scripts\x_media.py --label <wf>` |
+| `config/scenes/<wf>.json` | the measured + vision-labelled clip manifest, now also carrying `emotion` and `weather` | `python scripts\label_emotions.py --workflow <wf>` |
+| `config/scenes/<wf>-labels.md` | the human-readable clip → emotion → weather table | `python scripts\label_emotions.py --workflow <wf> --table` |
+| `scripts/label_emotions.py` | emotion (`happy sad excited angry calm love fear surprise`) + weather labels; also labels ForChi's pool with `--forchi` | `python scripts\label_emotions.py --workflow jephter` |
 | `config/songs/<wf>.json` | the measured song manifest | same command |
 | `scripts/gemini_keys.py` | key split, rotation, model ladder, TTS, validation | `python scripts\gemini_keys.py --audit` |
 | `scripts/x_media.py` | label clips and songs; `--vision` adds subject/baked-text | `python scripts\x_media.py --label jephter` |

@@ -87,6 +87,47 @@ MOOD_HINTS = [
     (("remember", "know", "truth", "promise", "always", "never"), "calm"),
 ]
 
+# Line text -> the emotion label the clip should carry. This is the point of labelling a library by
+# emotion: the script poses a feeling, and the clip has to answer it. Ordered: the first match wins,
+# so the most specific words come first.
+EMOTION_HINTS = [
+    (("cry", "tears", "ache", "grief", "goodbye", "broke", "hurt", "lose", "lost", "leaving"), "sad"),
+    (("afraid", "fear", "dark", "shake", "trembl", "scared", "unsure", "silence between"), "fear"),
+    (("angry", "anger", "shout", "fought", "fists", "slammed", "bitter"), "angry"),
+    (("laugh", "smile", "grin", "playful", "teas", "silly", "joking"), "happy"),
+    (("dance", "run", "rush", "wild", "sudden", "almost", "swept", "spin"), "excited"),
+    (("suddenly", "gasp", "stare", "eyes wide", "froze", "could not believe"), "surprise"),
+    (("love", "heart", "hold", "held", "kiss", "waist", "fingers", "cheek", "shoulder",
+      "breathe", "close", "warm", "skin", "hand", "palm", "embrace", "hair", "forehead"), "love"),
+    (("quiet", "still", "slow", "breathe", "room", "light", "morning", "evening", "sleep"), "calm"),
+]
+
+
+def emotion_for(text: str, default: str = "love") -> str:
+    t = text.lower()
+    for words, emotion in EMOTION_HINTS:
+        if any(w in t for w in words):
+            return emotion
+    return default
+
+
+WEATHER_HINTS = [
+    (("rain", "wet", "downpour", "drizzle", "storm", "soaked"), ("rain", "storm")),
+    (("snow", "winter", "frost", "cold", "freezing"), ("snow", "storm")),
+    (("night", "dark", "midnight", "late", "streetlight", "moon"), ("night",)),
+    (("window", "kitchen", "bedroom", "room", "hallway", "stove", "couch", "bed"), ("indoor",)),
+    (("sun", "morning", "light", "afternoon", "warm", "day"), ("clear",)),
+]
+
+
+def weather_for(text: str) -> tuple[str, ...]:
+    """Weather the line implies, so a line about night air is not illustrated with noon sunshine."""
+    t = text.lower()
+    for words, weather in WEATHER_HINTS:
+        if any(w in t for w in words):
+            return weather
+    return ()
+
 
 def mood_for(text: str, default: str = "tender") -> str:
     t = text.lower()
@@ -132,11 +173,14 @@ def pick_cuts(workflow: str, phrases: list[str], seg_durs: list[float], wf: dict
     last_temp = None
     plan: list[dict] = []
 
-    def take(src: list[dict], mood: str | None, want: str) -> dict:
-        same_temp = [c for c in src if temp_of(c) == want]
-        for c in same_temp:                       # fresh + mood + temperature
-            if c["file"] not in used and c["file"] not in recent and (not mood or c.get("mood") == mood):
+    def take(src: list[dict], emotion: str | None, want: str) -> dict:
+        # Emotion outranks colour temperature: a line about fear with a warm clip is wrong, while a
+        # line about fear with a cool clip at the "wrong" moment is merely imperfect. Measured on the
+        # 2026-11-01 renders, temperature-first matching produced 3/11 and 4/10 emotion hits.
+        for c in src:                             # fresh + emotion, any temperature
+            if c["file"] not in used and c["file"] not in recent and (not emotion or c.get("emotion") == emotion):
                 return c
+        same_temp = [c for c in src if temp_of(c) == want]
         for c in same_temp:                       # fresh + temperature
             if c["file"] not in used and c["file"] not in recent:
                 return c
@@ -148,20 +192,52 @@ def pick_cuts(workflow: str, phrases: list[str], seg_durs: list[float], wf: dict
                 return c
         return src[0]
 
+    def fresh_emotion(emotion: str | None, weather: tuple[str, ...] = ()) -> dict | None:
+        """The best fresh clip carrying this emotion, searched across every tier.
+
+        Emotion is searched library-wide before the tier preference is applied. The first version
+        asked each tier in turn, and because `take()` always returns *something*, tier 1 answered
+        with a non-matching clip before tier 2 was ever consulted — which is why emmanuel matched
+        only 4/10 cuts while the pool had 6 `calm` and 4 `sad` clips available.
+
+        Within an emotion, a clip whose `weather` matches what the line implies wins: a line about
+        night air should not be illustrated with noon sunshine, which is exactly what happened on the
+        2026-11-01 jephter render before this was added.
+        """
+        if not emotion:
+            return None
+        for require_weather in ((True,) if weather else (False,)):
+            for pool_tier in tiers:
+                for c in pool_tier:
+                    if c["file"] in used or c["file"] in recent:
+                        continue
+                    if c.get("emotion") != emotion:
+                        continue
+                    if require_weather and c.get("weather") not in weather:
+                        continue
+                    return c
+        for pool_tier in tiers:                    # accept a repeat before accepting a wrong feeling
+            for c in pool_tier:
+                if c["file"] not in used and c.get("emotion") == emotion:
+                    return c
+        return None
+
     for i, (phrase, dur) in enumerate(zip(phrases, seg_durs)):
         n_cuts = max(1, min(4, round(dur / target)))
         each = dur / n_cuts
         for k in range(n_cuts):
-            mood = mood_for(phrase)
-            want = "warm" if mood in ("tender", "joyful") else "cool"
+            emotion = emotion_for(phrase)
+            weather = weather_for(phrase)
+            want = "warm" if emotion in ("love", "happy", "calm") else "cool"
             if last_temp == want:                 # oscillate rather than sit in one temperature
                 want = "cool" if want == "warm" else "warm"
-            pick = None
-            for tier in tiers:
-                candidate = take(tier, mood, want)
-                if candidate["file"] not in used:
-                    pick = candidate
-                    break
+            pick = fresh_emotion(emotion, weather)
+            if pick is None:
+                for tier in tiers:
+                    candidate = take(tier, emotion, want)
+                    if candidate["file"] not in used:
+                        pick = candidate
+                        break
             pick = pick or tiers[0][0]
             used.add(pick["file"])
             last_temp = temp_of(pick)
@@ -171,6 +247,10 @@ def pick_cuts(workflow: str, phrases: list[str], seg_durs: list[float], wf: dict
                 "seconds": round(each, 3),
                 "file": pick["file"],
                 "path": str(clips_dir / pick["file"]),
+                "emotion": pick.get("emotion"),
+                "wanted_emotion": emotion,
+                "weather": pick.get("weather"),
+                "wanted_weather": list(weather),
                 "mood": pick.get("mood"),
                 "color_temp": pick.get("color_temp"),
                 "subject": pick.get("subject"),
@@ -582,7 +662,8 @@ def render(workflow: str, phrases: list[str], voice_wavs: list[Path], wf: dict,
         "phrase_durations": [round(d, 2) for d in durs],
         "dropped_phrases": dropped,
         "voice": wf.get("voice", {}).get("name"),
-        "cuts": [{k: c[k] for k in ("phrase", "cut", "seconds", "file", "mood", "color_temp",
+        "cuts": [{k: c[k] for k in ("phrase", "cut", "seconds", "file", "emotion",
+                                    "wanted_emotion", "mood", "color_temp",
                                     "subject", "baked_text", "content", "trim_in", "trim_out")}
                  for c in cuts],
         "song": song,
@@ -647,7 +728,8 @@ def main() -> int:
         x_script.remember_opening(a.workflow, script["opening"])
 
     phrases = script["lines"]
-    print(f"  [{a.workflow}] script: {len(phrases)} lines, {script['words']} words")
+    words = script.get("words") or sum(len(p.split()) for p in phrases)
+    print(f"  [{a.workflow}] script: {len(phrases)} lines, {words} words")
 
     pool = gk.pool_for(a.workflow)
     out_root = ROOT / wf.get("output_dir", f"out/{a.workflow}")

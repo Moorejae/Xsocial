@@ -1,0 +1,49 @@
+# emmanuel — clip emotion labels
+
+43 clips, labelled by `scripts/label_emotions.py`.
+
+| Clip | Emotion | Weather |
+| :--- | :--- | :--- |
+| Aisha_Lee_Photography.mp4 | **calm** | clear |
+| aishi✮.mp4 | **love** | night |
+| AlayJas_알라야스_이현.mp4 | **love** | indoor |
+| Amber_Francis.mp4 | **excited** | clear |
+| Anna_M..mp4 | **love** | night |
+| BOARAN_NARAOB.mp4 | **excited** | clear |
+| cafe.nabaat.mp4 | **fear** | night |
+| Cool_couple.mp4 | **love** | clear |
+| fara`s_Aesthetic_Journal.mp4 | **excited** | clear |
+| Haizx.mp4 | **excited** | night |
+| jasminluvtea.mp4 | **sad** | rain |
+| Julia_Thompson___Travel,_Hiking,_Adventure.mp4 | **calm** | clear |
+| Le_Alfie.mp4 | **calm** | clear |
+| Luxlife.mp4 | **love** | indoor |
+| Mahbub_Robin.mp4 | **love** | clear |
+| MahyaR.mp4 | **happy** | indoor |
+| Miles_—_Photo___Film.mp4 | **love** | clear |
+| NOBITA.mp4 | **happy** | clear |
+| O_Carneiro_Negro_da_Família.mp4 | **calm** | clear |
+| Origin_Weddings.mp4 | **surprise** | clear |
+| pinterest_1793009712107.mp4 | **excited** | night |
+| pinterest_1793009855997.mp4 | **love** | clear |
+| pinterest_1793012660282.mp4 | **angry** | rain |
+| pinterest_1793013138331.mp4 | **happy** | indoor |
+| pinterest_1793014182468.mp4 | **excited** | clear |
+| Piyalis_creations.mp4 | **calm** | clear |
+| Reach_We.mp4 | **love** | clear |
+| Rkivefera.mp4 | **love** | night |
+| Saloo.mp4 | **sad** | indoor |
+| Syco.mp4 | **sad** | none |
+| Uartz.mp4 | **calm** | clear |
+| wealthacademy33.mp4 | **excited** | clear |
+| Worldofmysoul(1).mp4 | **love** | clear |
+| Worldofmysoul(2).mp4 | **excited** | clear |
+| Worldofmysoul.mp4 | **love** | clear |
+| ֗_ִ_݁࣪_ִֶָ☾_۫on𝓈ra_𓍼.mp4 | **excited** | rain |
+| ᗩEᔕTᕼETIᑕ_ᐯIᗷE𓂃_ִֶָ☘︎.mp4 | **love** | night |
+| ✨Cristal✨.mp4 | **excited** | clear |
+| ❄فیـᷦــᷳــⷢــⷷــᷫـــر‌وز‌__خـᷠــᷲــͪــᷜـــان❄.mp4 | **love** | none |
+| 𝒜𝓇𝓂𝒾𝓉𝒶.mp4 | **love** | none |
+| 𝒲𝒾𝓉𝒽𝓁ℴ𝓋𝑒𝒮𝒶𝒾𝒹𝒶_🎀.mp4 | **love** | night |
+| 🌸__𝙽𝚊𝚍𝚒𝚗𝚎_🌸.mp4 | **love** | clear |
+| 🌼Havin🌼.mp4 | **sad** | indoor |

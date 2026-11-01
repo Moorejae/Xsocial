@@ -4,6 +4,101 @@ Newest first. Every change gets an entry, with evidence. See [AGENTS.md](AGENTS.
 
 ---
 
+## 2026-11-01 (emotion labels for all three libraries; ForChi Shorts on the Leda voice; per-channel script briefs)
+
+**Plane(s):** this folder, and `C:\Users\hp\forchi` (its working tree — **nothing committed there**, its owner
+reviews). No server change, no OAuth work, keys not rotated (owner's instruction).
+
+**Asked:** re-label the clips with `weather, happy, sad, excited, angry, calm, love, fear, surprise` and produce a
+table of clip name → label; do the same for ForChi's Shorts clips; give ForChi Shorts the voice currently used on
+jephter ("I love the female voice"); then replace emmanuel's voice with ForChi's current voice; and set the script
+focus — jephter: how being loved and loving someone feels, expressive and mindful; emmanuel: how to love
+intentionally, unconditionally and unapologetically.
+
+**Changed:**
+
+| File | Change | Why |
+| :--- | :--- | :--- |
+| `scripts/label_emotions.py` | **new.** Vision pass assigning `emotion` (8 values) and `weather` (8 values) per clip; `--workflow` for X, `--forchi` for ForChi, `--table` prints and writes the table | the measured labels said what a shot *looks* like, not what it *feels* like — and a script poses a feeling |
+| `config/scenes/<wf>.json` | every clip gains `emotion` + `weather`; file gains an `emotions` summary block | |
+| `config/scenes/<wf>-labels.md` | the table the owner asked for, one row per clip | |
+| `scripts/x_render.py` | `emotion_for()` / `weather_for()` map a line to labels; the picker now searches the **whole library** for the line's emotion, then weather, then tier, then temperature | see "two bugs" below |
+| `config/workflows.json` | new `script` block per workflow (theme / focus / avoid); emmanuel `voice.name` → **Leda** | the owner's briefs, kept in config so they can be tuned without code |
+| `scripts/x_script.py` | `system_for(wf)` appends the channel's brief to the shared rules | one writer, two intents |
+| ForChi `tools/_video_voice.py` | **new `render_gemini()`** + a `VOICE_BACKEND=gemini` dispatch before the F5 branch; model ladder, key rotation, the three audio formats handled | owner request; also removes the voice leg's dependency on the F5 worker |
+| ForChi `.env` | `VOICE_BACKEND=gemini`, `VOICE_GEMINI_NAME=Leda` (**names only** here) | |
+| ForChi `media/clips/emotion_labels.json` + `manifest.json` | 211 clips labelled; each manifest entry gains `emotion` and `weather_emo` (not `weather` — that name is free for ForChi's own use) | fields **added**, nothing removed, so ForChi's stitcher is unaffected |
+| `skills/x-forchi-bridge` | **new skill** for the two ForChi touchpoints | |
+| `skills/x-video-pipeline`, `skills/x-voice-personas`, `AGENTS.md` | labelling step, picker order, the Leda-for-all reversal, the script briefs | |
+
+### Label distributions
+
+```text
+jephter  love 22, calm 10, happy 9, sad 4, excited 4, angry 2, fear 2, surprise 1
+         weather: indoor 21, clear 21, night 5, none 4, fog 2, snow 1
+emmanuel calm 6, love 17, excited 10, sad 4, happy 3, fear 1, surprise 1, angry 1
+         weather: clear 23, night 8, indoor 6, rain 3, none 3
+forchi   calm 84, sad 61, excited 17, fear 15, love 13, happy 13, surprise 5, angry 3
+         weather: clear 89, indoor 46, none 44, night 23, rain 6, fog 3
+```
+
+Tables: `config/scenes/jephter-labels.md`, `config/scenes/emmanuel-labels.md`,
+`out/forchi_emotion_table.md` (211 rows).
+
+### Two bugs the emotion labels exposed
+
+1. **`take()` always returns something, so tier 1 won before emotion was consulted.** Asking tier by tier for an
+   emotion match meant tier 1 answered with a non-matching clip and tier 2 never ran. Fixed by searching every tier
+   for the line's emotion first. Measured: **4/10 and 3/11 → 10/10 and 11/11**.
+2. **Weather was not consulted at all.** A line about *"the cool night air from the open window"* was illustrated
+   with a couple in bright daytime sunlight. `weather_for()` now prefers a clip whose weather matches the line.
+   After both fixes, the final pair scored **11/11 and 10/10 on emotion, and 11/11 and 10/10 on weather**, with no
+   black intervals (`blackdetect`) in either file.
+
+A third, older bug resurfaced and was fixed properly: the black-window detection only trimmed head and tail, so a
+mid-clip fade still produced one black interval in an emmanuel render. It now uses the **longest gap between black
+spans**, which covers lead-in, tail and mid-clip fades. 19 jephter and 3 emmanuel clips are trimmed.
+
+### ForChi voice, verified through its own code
+
+```text
+backend: gemini voice: Leda
+render_script("You still remember the way the kitchen light fell across her face.", ...)
+  temp_media\vt_gemini\p1.wav -> 5.120000 s 251876 bytes      (12 words @ 2.34 w/s — Leda's pace)
+```
+
+Revert is one variable: `VOICE_BACKEND=` or `VOICE_BACKEND=contabo`. The F5 path is untouched.
+
+### Delivered
+
+```text
+C:\Users\hp\Downloads\jephter_20261101-0756_36s.mp4    36.4 s   voice Leda   11 cuts
+C:\Users\hp\Downloads\emmanuel_20261101-0757_34s.mp4   33.6 s   voice Leda   10 cuts
+```
+
+Both re-rendered at **zero TTS cost** after the picker fixes (cached voice).
+
+### One decision the owner should confirm
+
+"Replace emmanuel's voice with the current forchi's voice" was read literally: ForChi's voice *became* Leda on this
+same day, so **all three now share Leda**. That reverses the earlier "the two channels must not sound the same" rule
+(AGENTS.md §12, now amended). If the intent was ForChi's *previous* F5 whisper clone, the answer is to move emmanuel
+back to `Umbriel` — one word in `config/workflows.json`, and its numbers are in `skills/x-voice-personas`.
+
+### Dead ends
+
+| Attempted | Result |
+| :--- | :--- |
+| choosing ForChi's replacement voice by matching the F5 reference clip's pitch | the ref is **whispered**, so its "F0" of 103.9 Hz is unvoiced periodicity, not a voice register. Comparing it to Gemini output is not meaningful |
+| `--bars` with head/tail-only trimming | one black interval survived in a mid-clip fade. Use the longest gap |
+| a `reuse.json` without a `words` key | `KeyError: 'words'` in the renderer; it now computes the count |
+
+**Left open:** ForChi's changes are **uncommitted** by design; its owner should review and commit. Nothing is
+scheduled or uploaded yet. The owner plans to add both channels' emails to the existing ForChi OAuth scope — that is
+the next step and it is theirs to do in the console.
+
+---
+
 ## 2026-11-01 (emmanuel's voice matched to jephter's; two invisible video defects found and fixed)
 
 **Plane(s):** this folder only. No server change, no OAuth work, keys still not rotated (owner's instruction).

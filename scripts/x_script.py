@@ -53,6 +53,27 @@ Output exactly the number of lines asked for, one sentence per line, nothing els
 No numbering, no blank lines, no commentary."""
 
 
+def system_for(wf: dict) -> str:
+    """Add this channel's brief to the shared rules.
+
+    The two channels share a register and differ in intent: jephter is about the *feeling* of being
+    loved and loving back (expressive, mindful, inward); emmanuel is about loving *on purpose* —
+    intentionally, unconditionally, unapologetically (devotional, deliberate, outward). Same rules,
+    different brief, and the brief lives in config so it can be tuned without touching code.
+    """
+    script = wf.get("script") or {}
+    if not script:
+        return SYSTEM
+    parts = [SYSTEM, "", "This channel specifically:"]
+    if script.get("theme"):
+        parts.append(f"- Subject: {script['theme']}.")
+    if script.get("focus"):
+        parts.append(f"- Approach: {script['focus']}")
+    if script.get("avoid"):
+        parts.append(f"- Never: {script['avoid']}.")
+    return "\n".join(parts)
+
+
 def load_workflow(name: str) -> dict:
     data = json.loads(CONFIG.read_text(encoding="utf-8"))
     if name not in data:
@@ -180,7 +201,7 @@ def write_script(workflow: str, seed_topic: str | None = None, temperature: floa
 
     lines: list[str] = []
     for attempt in range(3):
-        text = pool.generate(prompt, system=SYSTEM,
+        text = pool.generate(prompt, system=system_for(wf),
                              temperature=temperature if attempt == 0 else max(0.6, temperature - 0.15 * attempt),
                              max_output_tokens=2048)
         lines = clean_lines(text, want)

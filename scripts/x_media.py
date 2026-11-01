@@ -422,15 +422,18 @@ def backfill_content(workflow: str) -> int:
 
 
 def detect_black_edges(path: Path) -> dict:
-    """Find black fade-in / fade-out at the head and tail of a clip.
+    """Find the longest black-free window in a clip.
 
-    Measured 2026-10-31 on the first delivered jephter video: `blackdetect` found black intervals at
-    **21.9 s, 29.4 s and 34.1 s** — each one exactly on a clip boundary, because stock clips fade up
-    from black and down to black. A cut that starts at frame 0 of such a clip therefore shows a black
-    frame for up to ~0.7 s, which reads as a broken video.
+    Measured 2026-10-31/11-01 on delivered videos: `blackdetect` found black spans at 21.9 s, 29.4 s
+    and 34.1 s of one short — each on a cut boundary, because stock clips fade up from black and down
+    to black. A first version only trimmed the head and tail, and a **mid-clip** fade still slipped
+    through (one black interval remained in the emmanuel render of 2026-11-01).
 
-    Returns `{"trim_in": seconds, "trim_out": seconds}` — the window worth using — or `{}` when the
-    clip is clean end to end.
+    So the rule is general: whatever the black spans are, use the longest gap between them. That
+    covers a lead-in, a tail, a fade between two shots, and the trivial case of no black at all.
+
+    Returns `{"trim_in": s, "trim_out": s}` for the usable window, or `{}` when the clip is already
+    clean at one stretch.
     """
     dur = probe(path).get("duration", 0)
     if dur <= 1.0:
@@ -448,20 +451,19 @@ def detect_black_edges(path: Path) -> dict:
                 end = float(line.split("black_end:")[1].split()[0])
             except (IndexError, ValueError):
                 continue
-            spans.append((start, end))
+            spans.append((max(0.0, start), min(dur, end)))
     if not spans:
         return {}
 
-    trim_in, trim_out = 0.0, dur
-    if spans[0][0] <= 0.25:                      # fades up from black
-        trim_in = round(spans[0][1] + 0.10, 2)
-    if spans[-1][1] >= dur - 0.25:               # fades down to black
-        trim_out = round(spans[-1][0] - 0.10, 2)
-    if trim_in <= 0.0 and trim_out >= dur:
+    spans.sort()
+    edges = [0.0] + [v for span in spans for v in span] + [dur]
+    gaps = [(edges[i], edges[i + 1]) for i in range(0, len(edges) - 1, 2)]
+    start, end = max(gaps, key=lambda g: g[1] - g[0])
+    if end - start < 1.2:                       # nothing usable; leave the clip alone
         return {}
-    if trim_out - trim_in < 1.2:                 # nothing usable left; leave it alone
-        return {}
-    return {"trim_in": trim_in, "trim_out": round(trim_out, 2)}
+    if start <= 0.0 and end >= dur:
+        return {}                               # the whole clip is already clean
+    return {"trim_in": round(start + 0.05, 2), "trim_out": round(end - 0.05, 2)}
 
 
 def classify_song(path: Path) -> dict:

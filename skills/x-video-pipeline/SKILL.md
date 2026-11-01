@@ -25,7 +25,8 @@ the other's quota because the pools are disjoint.
 | # | Stage | Code | Output |
 | :--- | :--- | :--- | :--- |
 | 0 | **Label the libraries** | `x_media.py --label <wf>` | `config/scenes/<wf>.json`, `config/songs/<wf>.json` (committed) |
-| 0b | **Vision labels** (optional, once) | `x_media.py --vision <wf>` | adds `subject`, `baked_text`, verified `mood` |
+| 0b | **Emotion + weather labels** | `label_emotions.py --workflow <wf>` | `emotion` and `weather` per clip; table via `--table` |
+| 0c | **Vision labels** (optional, once) | `x_media.py --vision <wf>` | adds `subject`, `baked_text`, verified `mood` |
 | 0c | **Picture repairs** (once, or after adding clips) | `x_media.py --bars <wf>` | adds `content` (letterbox rect) and `trim_in`/`trim_out` (black lead/tail) |
 | 1 | **Script** | `x_script.py` / `x_render.py` | 5-6 romance lines, ≤92 words |
 | 2 | **Voice** | `x_voice.py` | one WAV per line, content-addressed cache |
@@ -59,19 +60,36 @@ subject, the song and its offset, levels, and `under_cap`. **Read the sidecar, n
 
 ## How a clip is chosen
 
-Tiered, and the tiers are the point:
+The script poses a **feeling**, and the library answers it by label. `emotion` (from
+`label_emotions.py`) outranks everything else, then `weather`, then the tier, then colour temperature.
 
-1. **people, no burned-in text** (`subject` in `couple`/`single`, `baked_text` false)
+Order of preference, and each step came from a measured failure:
+
+1. **fresh clip whose `emotion` matches the line**, preferring one whose `weather` also matches;
+2. fresh clip with the right emotion at any weather;
+3. fresh clip in the best tier at the preferred temperature;
+4. fresh clip anywhere in the tier; then merely unused; then any reuse.
+
+Tiers, for the `baked_text`/`subject` axis:
+
+1. people, no burned-in text (`subject` in `couple`/`single`, `baked_text` false)
 2. any clip without burned-in text
 3. people, even with text
 4. anything
 
-Within a tier: fresh (not used in this video, not in the last 30) **and** mood-matched **and** colour-temperature
-matched; then fresh and temperature-matched; then fresh; then merely unused. Temperature **oscillates** —
-consecutive cuts alternate warm/cool so the video breathes instead of sitting in one grade.
+**Emotion must be searched library-wide, not tier-by-tier.** The first implementation asked each tier in
+turn for an emotion match; because the helper always returns *something*, tier 1 answered with a
+non-matching clip and tier 2 was never consulted. Measured result: **4/10** and **3/11** matches while
+the pool held 6 `calm` and 4 `sad` clips. After searching all tiers for the emotion first: **10/10** and
+**11/11**, then 100 % on weather too once it was added.
 
-`baked_text` is a near-veto, not a preference: a stock clip's own caption fighting ours makes both unreadable.
-Measured 2026-10-28: 8 of 54 jephter clips and 1 of 43 emmanuel clips carry burned-in text.
+`emotion_for()` maps a line to a label with ordered keyword lists (sad/fear/angry before happy/love,
+because "she cried in the warm light" is not a happy line). `weather_for()` does the same for
+`night`/`rain`/`snow`/`indoor`/`clear` — a line about night air should not be illustrated with noon
+sunshine, which is exactly what happened before it existed.
+
+`baked_text` is a near-veto, not a preference: a stock clip's own caption fighting ours makes both
+unreadable. Measured 2026-10-28: 8 of 54 jephter clips and 1 of 43 emmanuel clips carry burned-in text.
 
 ## How a song is chosen (and why no two videos sound alike)
 
