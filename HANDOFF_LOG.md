@@ -91,11 +91,31 @@ Both channels are now wired end to end: **Chinedu Jephtah** `CD5_noWEHdU`, **Bro
 `ic0a904YFS0`, both unlisted. The second consent also proves the contrast — with `youtube.readonly` present
 the channel read-back works and the upload comes back `state uploaded` instead of `uploaded-unconfirmed`.
 
-**Left open:** the emmanuel channel's own name is **Brown Cinema**, not "Emmanuel" — flagged to the owner in
-case that is the wrong Google account or a channel that has not been renamed. jephter's token has no
-`youtube.readonly`, so its identity evidence stays the insert response and `--check` cannot name the channel;
-one extra consent fixes that whenever it is convenient. The scheduler's `unlisted` → `public` switch is still
-the owner's call. ForChi's `d5b3981` is still local.
+**The scheduler would have posted a third video today, so its state was corrected by hand.** `run_pass()`
+treats *any past slot that is not done* as due (`if now < slot["at"]: continue`, no upper window), and the
+registered task wakes every 15 minutes. The 13:44 pass had gated both channels ("no refresh token"), so
+`post:0` was still pending and the next wake-up would have uploaded a fallback render within minutes of the
+manual post. Both workflows' `2026-11-01:post:0` entries were marked `posted` with a note naming the manual
+video, leaving `produce:1` and `post:1` untouched:
+
+```text
+jephter   post 10:05  posted   out\jephter\jephter_20261101-130413.mp4
+emmanuel  post 10:34  posted   out\emmanuel\emmanuel_20261101-133201.mp4
+```
+
+That keeps today at two posts per channel — the manual proof plus the 17:00 / 17:37 slot — instead of three.
+
+**Two decisions taken without the owner available, both reversible.** The scheduled task keeps
+`--privacy unlisted`: the emmanuel channel's own name is unconfirmed, and a public post to the wrong channel
+cannot be recalled the way an unlisted one can. And the "Brown Cinema" post was left in place rather than
+deleted, because an unlisted video costs nothing and deleting it would remove the only evidence that the
+channel posts.
+
+**Left open:** confirm the emmanuel channel really is **Brown Cinema** — if it is the wrong Google account,
+delete `ic0a904YFS0` and re-consent. jephter's token has no `youtube.readonly`, so `--check` cannot name its
+channel; one extra consent fixes that. Switching the task to `--privacy public` is the owner's call. ForChi's
+`d5b3981` is still local.
+
 
 
 ---
