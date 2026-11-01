@@ -261,11 +261,16 @@ def hash_file(path: Path) -> str:
 # metadata and upload
 # --------------------------------------------------------------------------------------
 
-def metadata_for(workflow: str, script: dict | None) -> dict:
-    """Title, description and tags. The first line of the script becomes the hook."""
+def metadata_for(workflow: str, script: dict | None, channel_name: str | None = None) -> dict:
+    """Title, description and tags. The first line of the script becomes the hook.
+
+    The footer names the **real** channel when the caller knows it, because the workflow name and the
+    YouTube channel's own name are not the same thing: the emmanuel workflow posts to a channel called
+    "Brown Cinema", and a description signed "Emmanuel" on that channel is a mismatch a viewer sees.
+    """
     wf = json.loads(CONFIG.read_text(encoding="utf-8")).get(workflow, {})
     wf = {k: v for k, v in wf.items() if not k.startswith("_")}
-    channel = wf.get("channel_name", workflow.title())
+    channel = channel_name or wf.get("channel_name", workflow.title())
     lines = (script or {}).get("lines") or []
     hook = lines[0].rstrip(".") if lines else ""
     title = (hook[:92] + "…") if len(hook) > 92 else (hook or f"{channel} — a short about love")
@@ -432,7 +437,7 @@ def main() -> int:
             data = json.loads(rp.read_text(encoding="utf-8"))
             script = {"lines": data.get("phrases") or data.get("lines") or []}
 
-    meta = metadata_for(a.workflow, script)
+    meta = metadata_for(a.workflow, script, channel_name=ch["title"] if ch.get("id") else None)
     meta["status"]["privacyStatus"] = a.privacy
     digest = hash_file(path)
     ledger = load_ledger()

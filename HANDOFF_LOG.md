@@ -91,6 +91,21 @@ only the owner can take — so it is repeated on every daily heartbeat until it 
 → OAuth consent screen → **Publish app**, then re-consent each channel once so the new token carries the longer
 life. The check costs one API call a day because it rides the heartbeat; the other 47 passes stay local.
 
+### Branding: the description now names the real channel
+
+The workflow name and the YouTube channel's own name are not the same thing — the emmanuel workflow posts to a
+channel called **Brown Cinema**, whose own branding differs. `metadata_for()` therefore takes an optional
+`channel_name`, and `main()` passes the title `channel_of()` just read from the credential:
+
+```text
+metadata_for("emmanuel", …, channel_name="Brown Cinema")  -> footer: Brown Cinema
+metadata_for("emmanuel", …)                               -> footer: Emmanuel   (config fallback)
+```
+
+Both posts already live keep the footer they were published with ("Emmanuel" on Brown Cinema). They are **not**
+being patched: `videos.update` needs a scope `youtube.upload` may not grant, and a partial `snippet` update can
+clear tags or the category. The fix applies from the next upload, which is the safe direction.
+
 The site stayed live for both workflows throughout (all four pages `200`: `/jephter/privacy.html`,
 `/jephter/terms.html`, `/emmanuel/privacy.html`, `/emmanuel/terms.html`), so nothing needed redeploying.
 
