@@ -85,6 +85,11 @@ python scripts\x_publish.py --workflow emmanuel --privacy unlisted
 Invoke-WebRequest https://youtu.be/ic0a904YFS0  -> 303
 
 x_scheduler.credential_ready:  jephter ready=True   emmanuel ready=True
+
+# credential-free proof, straight from YouTube — no token involved:
+python -c "import json,urllib.request,urllib.parse; ..."   # youtube.com/oembed?url=https://youtu.be/<id>
+CD5_noWEHdU -> 'I promised myself that staying unattached was the gentlest way to live' | Chinedu Jephtah
+ic0a904YFS0 -> 'Speak about them with tenderness even when you are angry'            | Brown Cinema
 ```
 
 Both channels are now wired end to end: **Chinedu Jephtah** `CD5_noWEHdU`, **Brown Cinema**

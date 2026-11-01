@@ -114,6 +114,14 @@ upload-only token:
 - `confirm()` reports `uploaded-unconfirmed` rather than failing a run whose upload already landed
 - an external check: `Invoke-WebRequest https://youtu.be/<id>` answers **303** when the video exists
 
+The strongest proof needs **no credential at all** — YouTube's own oEmbed endpoint names the title and the
+channel, which also settles "which channel did that token post to?" without any scope argument:
+
+```powershell
+python -c "import json,urllib.request,urllib.parse;q='https://www.youtube.com/oembed?'+urllib.parse.urlencode({'url':'https://youtu.be/CD5_noWEHdU','format':'json'});print(json.load(urllib.request.urlopen(q,timeout=30)))"
+# title -> ..., author_name -> 'Chinedu Jephtah'
+```
+
 Prefer re-consenting with `youtube.readonly` when it is convenient, but never make the post depend on it.
 
 ## Publishing
