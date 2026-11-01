@@ -4,6 +4,81 @@ Newest first. Every change gets an entry, with evidence. See [AGENTS.md](AGENTS.
 
 ---
 
+## 2026-11-01 (emmanuel's voice matched to jephter's; two invisible video defects found and fixed)
+
+**Plane(s):** this folder only. No server change, no OAuth work, keys still not rotated (owner's instruction).
+
+**Asked:** "the voice for jephtah is nice and amazing… the voice for emmanuel isnt, I would like the voice to sound
+more like that of jephtah… once you are done remove the old testing video and add the new ones so i can test them.
+if both works then we can move on."
+
+**Changed:**
+
+| File | Change | Why |
+| :--- | :--- | :--- |
+| `config/workflows.json` | emmanuel `voice.name`: **Pulcherrima → Umbriel** (cue unchanged) | see the audition below |
+| `scripts/x_media.py` | `detect_black_edges()` via `blackdetect`; `--bars` now records `trim_in`/`trim_out` as well as the letterbox `content` rect; both are also written by `--label` | a cut that starts at frame 0 of a fading clip shows black |
+| `scripts/x_render.py` | `clean_source()`: builds a **cached trimmed copy** for clips with black lead/tail, and segments loop that copy | looping the raw source re-shows its fade-to-black at every wrap |
+| `skills/x-voice-personas` | new pairing table, the "match the liked voice" method, and the lesson below | |
+| `skills/x-video-pipeline`, `skills/x-test-video` | black-frame row, `blackdetect` in the verification block, the ear-check row, and the "delete the old pair" pitfall | |
+
+### The voice: what the ear rejected, and what measured it
+
+Re-auditioned 13 voices on an emmanuel line with **Leda as the reference**, scored by distance:
+
+| voice | pace | quiet ratio | gap vs Leda |
+| :--- | ---: | ---: | ---: |
+| **Umbriel** (chosen) | 2.09 w/s | 0.156 | **0.002** |
+| Leda (jephter, the one the owner likes) | 2.23 w/s | 0.158 | — |
+| Vindemiatrix | 2.39 w/s | 0.182 | 0.024 |
+| Achernar | 2.37 w/s | 0.201 | 0.043 |
+| **Pulcherrima** (old emmanuel) | **2.95 w/s** | 0.231 | **0.073** |
+
+Umbriel's pause profile is almost identical to Leda's while the timbre stays different, so the channels remain
+distinguishable — which AGENTS.md §12 requires. **The measurable cause of "it doesn't sound nice" was speed**:
+Pulcherrima read 13 words in 5.08 s, the fastest of every candidate. Check words/second first when a voice is
+rejected.
+
+### Two defects that no passing render would have caught
+
+1. **Black frames at clip boundaries.** A frame at 34.65 s of the delivered jephter video was **entirely black**.
+   `blackdetect` on the file found black spans at **21.9 s, 29.4 s and 34.1 s** — each exactly on a cut boundary,
+   because stock clips fade up from and down to black. Measured library-wide: **21 of 97 clips** (18 jephter, 3
+   emmanuel) have a black lead and/or tail of up to ~0.8 s. Now measured per clip and cut inside the clean window;
+   the same frame is now a full-bleed shot of a girl with flowers braided into her hair.
+2. **A crop that produced black.** The first diagnosis looked like the letterbox crop failing, so the crop was
+   re-tested on the source directly: cropping to `720:800:0:240` returns a *brighter* frame than the full one, and
+   `cropdetect` reports the identical rect across the whole clip. The crop was innocent; the black was the source's
+   own fade. Worth recording so nobody "fixes" the crop again.
+
+**Verified:**
+
+```text
+ffmpeg -vf blackdetect=d=0.08:pix_th=0.10 on both delivered files
+  emmanuel_20261101-0644_35s.mp4 : no black intervals
+  jephter_20261101-0643_37s.mp4  : no black intervals
+
+delivered (old pair deleted from Downloads first):
+  C:\Users\hp\Downloads\jephter_20261101-0643_37s.mp4   20.4 MB  37.4 s  voice Leda
+  C:\Users\hp\Downloads\emmanuel_20261101-0644_35s.mp4  17.9 MB  35.3 s  voice Umbriel
+  + a .json report beside each
+
+pace in the finished files: jephter 2.28 w/s, emmanuel 2.10 w/s  (previously emmanuel was the fast one)
+levels: jephter mean -23.4 dB / peak -2.2 dB;  emmanuel mean -26.3 dB / peak -3.5 dB
+cuts: 11 and 10; letterboxed clips handled; 0 clips with burned-in text
+```
+
+Both re-renders after the voice change cost **zero TTS calls** except the 5 new emmanuel lines — every other phrase
+hit the content-addressed cache.
+
+**Dead ends:** none new. The one wrong hypothesis (a broken crop) is recorded above so it is not chased again.
+
+**Left open:** the same three as before — nobody has listened to the *finished* pair yet (the owner is about to);
+the uploader, the schedule and the §8 supervision ladder are not built; `--bars` should be re-run whenever clips are
+added to either library.
+
+---
+
 ## 2026-10-31 (two test videos delivered to Downloads; letterbox and caption-chunk defects found by looking)
 
 **Plane(s):** this folder only. No server change, no OAuth work, keys still not rotated (owner's instruction).

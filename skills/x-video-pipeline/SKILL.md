@@ -26,7 +26,7 @@ the other's quota because the pools are disjoint.
 | :--- | :--- | :--- | :--- |
 | 0 | **Label the libraries** | `x_media.py --label <wf>` | `config/scenes/<wf>.json`, `config/songs/<wf>.json` (committed) |
 | 0b | **Vision labels** (optional, once) | `x_media.py --vision <wf>` | adds `subject`, `baked_text`, verified `mood` |
-| 0c | **Letterbox rects** (once, or after adding clips) | `x_media.py --bars <wf>` | adds `content` / `content_coverage` |
+| 0c | **Picture repairs** (once, or after adding clips) | `x_media.py --bars <wf>` | adds `content` (letterbox rect) and `trim_in`/`trim_out` (black lead/tail) |
 | 1 | **Script** | `x_script.py` / `x_render.py` | 5-6 romance lines, ≤92 words |
 | 2 | **Voice** | `x_voice.py` | one WAV per line, content-addressed cache |
 | 3 | **Cut plan** | `x_render.pick_cuts` | one clip per cut, ~2.6-4.8 s each |
@@ -124,6 +124,8 @@ is the replacement and is what runs here.
 | Symptom | Cause | Fix |
 | :--- | :--- | :--- |
 | Black bars top and bottom inside the picture | the **source clip** is letterboxed, so the bars survive `scale`+`crop` | `x_media.py --bars <wf>` records the content rect via `cropdetect`; the renderer crops to it before scaling. 6 of 97 clips were affected |
+| A cut goes **fully black** for up to ~0.7 s | stock clips fade up from / down to black, and a cut starting at frame 0 shows that fade. Measured: black spans at 21.9 s, 29.4 s and 34.1 s in one video, each exactly on a clip boundary | `--bars` also records `trim_in`/`trim_out` via `blackdetect`; `clean_source()` builds a **trimmed cached copy** and the segment loops *that*, so a loop wrap cannot re-show the fade. 21 of 97 clips were affected |
+| A "letterboxed" clip still shows bars, or a fixed clip still flashes black | `content`/`trim_*` were never measured (added after labelling) | run `--bars <wf>`; it backfills without re-measuring everything |
 | A caption reads *"and gather the"* | fixed 3-word chunks strand a function word | `chunk_words` takes one more word when a chunk would end on `the`/`and`/`of` |
 | A "letterboxed" clip still shows bars | its `content` rect was never measured (added after labelling) | run `--bars <wf>`; it backfills without re-measuring everything |
 | Final line is a fragment: *"The radio plays"* / *"You just stand together in."* | the model truncated, and the first version of the guard **appended a full stop to the truncation** | `complete_ending` + `repair_ending` in `x_script.py`: a short or dangling tail is **dropped**, the previous sentence becomes the close; refuses to publish if no complete ending survives 3 attempts |
@@ -141,6 +143,8 @@ is the replacement and is what runs here.
 $j = Get-Content (Get-ChildItem out\jephter\*.json | Sort LastWriteTime -Desc | Select -First 1) -Raw | ConvertFrom-Json
 $j.duration_s, $j.under_cap, $j.cuts.Count, $j.song.offset
 
+# black frames are the cheapest invisible defect to catch
+ffmpeg -hide_banner -nostats -i <output>.mp4 -vf "blackdetect=d=0.08:pix_th=0.10" -an -f null - 2>&1 | Select-String black_start
 ffmpeg -y -ss 9 -i <output>.mp4 -frames:v 1 out\check\a.jpg      # then open the frame
 ```
 

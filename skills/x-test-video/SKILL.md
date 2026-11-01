@@ -69,21 +69,25 @@ Each of these was found by looking, not by rendering successfully:
 
 | Check | What it caught |
 | :--- | :--- |
+| `blackdetect` over the whole file | black flashes at 21.9 / 29.4 / 34.1 s — source clips fading from black. Fixed by `trim_in`/`trim_out` |
 | a frame from a **bright** scene | white captions vanishing over snow — fixed by the scrim |
 | a frame from **mid-video**, not the first | a letterboxed source keeping its black bars (6 of 97 clips) — fixed by `cropdetect` + crop |
 | the caption text itself | *"and gather the"* — a chunk ending on a function word — fixed by `chunk_words` |
 | the **last** caption | a narration ending mid-sentence (*"You just stand together in."*) — fixed by the ending guard |
 | audio levels | `peak_db` near -1 dB with `mean_db` around -25 dB is a healthy whisper over a bed |
+| **the ear** | the owner liked jephter's Leda and rejected emmanuel's Pulcherrima. No measurement said so; the fix was to re-audition and match Leda's character |
 
 ## Pitfalls
 
 | Situation | Do this |
 | :--- | :--- |
 | `PoolExhausted` on TTS | quota, not a bug. Reuse an existing phrases file (0 calls), wait for the daily reset, or see `x-voice-personas` |
-| The owner wants a different song feel | change `music.gain` and re-render with the same phrases file — no speech cost |
+| Owner likes one channel's voice and not the other's | re-audition **against the liked voice as the reference** and score by distance; check words/second first — a rejected voice is usually too fast. See `x-voice-personas` |
+| Owner wants a different song feel | change `music.gain` and re-render with the same phrases file — no speech cost |
 | A clip looks wrong (car, city, cartoon) | it is the owner's library; relabel with `x_media.py --vision <wf>` rather than editing the picker |
 | Output over 50 s | the renderer already drops phrases from the middle; if it still refuses, the voice pace is wrong for the workflow, not the cap |
 | Owner asks for a **new** script | omit `--phrases-file`; that spends TTS calls (one per line) |
+| Old test files are still in Downloads | the owner expects the folder to hold only the current pair — delete the previous `<channel>_*/<channel>_*.json` before announcing new ones |
 
 ## The deliverable, in one line
 

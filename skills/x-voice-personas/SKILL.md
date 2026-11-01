@@ -15,6 +15,7 @@ Two channels, two voices, and they must not sound like the same person. That is 
 ## When to use
 
 - A video sounds too fast, too loud, too flat, or nothing like a whisper.
+- The owner likes one channel's voice and not the other's.
 - Choosing or changing a voice, or making sure the two channels differ.
 - TTS returns `audio/l16…`, `audio/L16;codec=pcm…` instead of a WAV.
 - TTS starts answering `429` across every key.
@@ -43,10 +44,18 @@ differs**. A style sentence longer than a cue is not worth the risk.
 `python scripts\x_voice.py --workflow jephter --audition` renders one 17-word line in ten voices and reports
 duration, words/second, mean level, and the fraction of the file that is near-silence (breath).
 
+To **match an existing voice** — the usual request, *"make emmanuel sound like jephter"* — audition the candidates on
+*that workflow's own line* with the preferred voice included as the reference, then score by distance from it:
+
+```python
+d = abs(wps - ref_wps) * 3 + abs(quiet - ref_quiet) * 12 + abs(mean_db - ref_mean) * 0.08
+```
+
 | voice | duration | w/s | mean dB | quiet ratio | note |
 | :--- | ---: | ---: | ---: | ---: | :--- |
 | **Leda** | 6.76 s | 2.66 | **-29.5** | 0.196 | **jephter** — quietest read |
-| **Pulcherrima** | 7.16 s | 2.51 | -29.1 | **0.334** | **emmanuel** — most breath |
+| **Umbriel** | 7.17 s | 2.09 | -26.7 | **0.156** | **emmanuel** — matches Leda's steadiness (gap 0.002) |
+| Pulcherrima | 5.08 s | 2.95 | -28.9 | 0.231 | was emmanuel; **rejected by ear** — fastest read of the field |
 | Aoede | 8.12 s | 2.22 | -26.8 | 0.192 | |
 | Erinome | 8.16 s | 2.21 | -27.0 | 0.271 | breathy, louder than Pulcherrima |
 | Achernar | 6.96 s | 2.59 | -26.1 | 0.216 | |
@@ -56,9 +65,27 @@ duration, words/second, mean level, and the fraction of the file that is near-si
 | Sulafat | 8.04 s | 2.24 | -20.7 | 0.170 | **loudest** — not a whisper |
 | Despina | 12.08 s | **1.49** | -23.0 | 0.220 | too slow: an 85-word script would be ~57 s and break the 50 s cap |
 
-The choice is a **pair**, not two independent winners: Leda is steady and very quiet, Pulcherrima is airier with far
-more pauses, so the two channels are distinguishable even at the same volume. Do not set both to the quietest two —
-that is how two channels end up sounding like one narrator on two accounts.
+### The lesson the owner's ear taught (2026-11-01)
+
+The first pairing was chosen by "quietest two, with different breath profiles". The owner liked jephter and
+**did not like emmanuel**: *"the voice for emmanuel isn't, I would like it to sound more like that of jephter."*
+
+So the goal is not "two different quiet voices", it is **one voice character, two timbres** — the same steadiness and
+closeness, a different person. Re-audition against the owner's preferred voice as the reference and score by
+**distance from it**:
+
+| voice | vs Leda: pace gap | quiet-ratio gap | verdict |
+| :--- | ---: | ---: | :--- |
+| **Umbriel** | 0.14 w/s | **0.002** | **chosen** — same character, different timbre |
+| Vindemiatrix | 0.16 | 0.024 | close second |
+| Achernar | 0.14 | 0.043 | |
+| Pulcherrima (old) | **0.72** | **0.073** | what sounded wrong |
+
+The measurable signal for "sounds wrong" was the **pace**: Pulcherrima read 13 words in 5.08 s — the fastest of every
+candidate — and that is what the ear rejected. When a voice is disliked, check its words/second before its level.
+
+The pair must stay distinguishable, so do not simply use Leda for both: two channels on one timbre defeats the
+independence contract in AGENTS.md §12.
 
 Re-audition after any TTS model change: `out/audition/<workflow>/audition.json` holds the numbers, and `.wav` files
 sit beside it for a listen.

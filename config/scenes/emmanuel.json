@@ -227,7 +227,9 @@
       "mood": "tender",
       "note": "luma 136, warmth +0, motion 3.9",
       "subject": "couple",
-      "baked_text": false
+      "baked_text": false,
+      "trim_in": 0.0,
+      "trim_out": 12.7
     },
     {
       "file": "Mahbub_Robin.mp4",
@@ -355,7 +357,9 @@
       "mood": "tender",
       "note": "luma 68, warmth +61, motion 10.5",
       "subject": "couple",
-      "baked_text": false
+      "baked_text": false,
+      "trim_in": 0.0,
+      "trim_out": 19.3
     },
     {
       "file": "pinterest_1793012660282.mp4",
@@ -597,7 +601,9 @@
       "subject": "couple",
       "baked_text": false,
       "content": "720:1118:0:0",
-      "content_coverage": 0.873
+      "content_coverage": 0.873,
+      "trim_in": 0.0,
+      "trim_out": 11.6
     },
     {
       "file": "✨Cristal✨.mp4",

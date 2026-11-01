@@ -17,7 +17,9 @@
       "mood": "tender",
       "note": "luma 64, warmth +8, motion 6.1",
       "subject": "couple",
-      "baked_text": true
+      "baked_text": true,
+      "trim_in": 0.0,
+      "trim_out": 39.67
     },
     {
       "file": "aesthetic.mp4",
@@ -145,7 +147,9 @@
       "mood": "neutral",
       "note": "luma 53, warmth +13, motion 5.3",
       "subject": "single",
-      "baked_text": false
+      "baked_text": false,
+      "trim_in": 0.0,
+      "trim_out": 29.88
     },
     {
       "file": "chloewkchan.mp4",
@@ -161,7 +165,9 @@
       "mood": "calm",
       "note": "luma 151, warmth +10, motion 9.1",
       "subject": "scenery",
-      "baked_text": false
+      "baked_text": false,
+      "trim_in": 0.0,
+      "trim_out": 31.87
     },
     {
       "file": "Cultura_Magazine.mp4",
@@ -193,7 +199,9 @@
       "mood": "longing",
       "note": "luma 36, warmth +14, motion 4.9",
       "subject": "couple",
-      "baked_text": false
+      "baked_text": false,
+      "trim_in": 2.46,
+      "trim_out": 22.92
     },
     {
       "file": "Dualité.mp4",
@@ -225,7 +233,9 @@
       "mood": "longing",
       "note": "luma 120, warmth +35, motion 12.3",
       "subject": "single",
-      "baked_text": false
+      "baked_text": false,
+      "trim_in": 0.0,
+      "trim_out": 22.77
     },
     {
       "file": "Focus.mp4",
@@ -241,7 +251,9 @@
       "mood": "melancholy",
       "note": "luma 76, warmth +19, motion 5.5",
       "subject": "single",
-      "baked_text": false
+      "baked_text": false,
+      "trim_in": 0.0,
+      "trim_out": 64.07
     },
     {
       "file": "getyourglass.mp4",
@@ -385,7 +397,9 @@
       "mood": "tender",
       "note": "luma 69, warmth +24, motion 13.9",
       "subject": "couple",
-      "baked_text": false
+      "baked_text": false,
+      "trim_in": 0.0,
+      "trim_out": 24.57
     },
     {
       "file": "Milly_Lodge.mp4",
@@ -401,7 +415,9 @@
       "mood": "tender",
       "note": "luma 54, warmth +34, motion 10.2",
       "subject": "single",
-      "baked_text": false
+      "baked_text": false,
+      "trim_in": 0.0,
+      "trim_out": 23.1
     },
     {
       "file": "pinterest_1793011688351.mp4",
@@ -481,7 +497,9 @@
       "mood": "melancholy",
       "note": "luma 61, warmth +14, motion 12.1",
       "subject": "single",
-      "baked_text": false
+      "baked_text": false,
+      "trim_in": 0.0,
+      "trim_out": 14.3
     },
     {
       "file": "pinterest_1793015954172.mp4",
@@ -533,7 +551,9 @@
       "subject": "couple",
       "baked_text": true,
       "content": "720:898:0:192",
-      "content_coverage": 0.702
+      "content_coverage": 0.702,
+      "trim_in": 0.0,
+      "trim_out": 19.49
     },
     {
       "file": "Rents.mp4",
@@ -597,7 +617,9 @@
       "mood": "restless",
       "note": "luma 59, warmth +28, motion 11.1",
       "subject": "couple",
-      "baked_text": false
+      "baked_text": false,
+      "trim_in": 0.0,
+      "trim_out": 8.97
     },
     {
       "file": "Sophie.mp4",
@@ -647,7 +669,9 @@
       "subject": "couple",
       "baked_text": false,
       "content": "720:800:0:240",
-      "content_coverage": 0.625
+      "content_coverage": 0.625,
+      "trim_in": 0.77,
+      "trim_out": 14.93
     },
     {
       "file": "Wed_Vibes.mp4",
@@ -713,7 +737,9 @@
       "mood": "calm",
       "note": "luma 110, warmth +5, motion 3.4",
       "subject": "single",
-      "baked_text": false
+      "baked_text": false,
+      "trim_in": 0.0,
+      "trim_out": 45.13
     },
     {
       "file": "ѕαтαη.mp4",
@@ -729,7 +755,9 @@
       "mood": "melancholy",
       "note": "luma 64, warmth +30, motion 6.8",
       "subject": "single",
-      "baked_text": false
+      "baked_text": false,
+      "trim_in": 0.0,
+      "trim_out": 32.69
     },
     {
       "file": "ִ_𝐉essie_!_୧_ֹ_ִ_🎨.mp4",
@@ -745,7 +773,9 @@
       "mood": "joyful",
       "note": "luma 63, warmth +22, motion 8.2",
       "subject": "single",
-      "baked_text": false
+      "baked_text": false,
+      "trim_in": 0.0,
+      "trim_out": 26.23
     },
     {
       "file": "ׅ⠀🧺_ֺ__៹__ׅ⠀𝐴𝑛𝑛𝑒𝑙𝑖𝑠𝑒⠀，.mp4",
@@ -793,7 +823,9 @@
       "mood": "tender",
       "note": "luma 56, warmth +22, motion 3.0",
       "subject": "couple",
-      "baked_text": false
+      "baked_text": false,
+      "trim_in": 0.0,
+      "trim_out": 21.93
     },
     {
       "file": "𐙚.mp4",
@@ -825,7 +857,9 @@
       "mood": "restless",
       "note": "luma 69, warmth +22, motion 24.8",
       "subject": "single",
-      "baked_text": false
+      "baked_text": false,
+      "trim_in": 0.57,
+      "trim_out": 40.67
     },
     {
       "file": "𝓔𝓿𝓲𝓮.mp4",
@@ -857,7 +891,9 @@
       "mood": "melancholy",
       "note": "luma 60, warmth +42, motion 4.7",
       "subject": "single",
-      "baked_text": false
+      "baked_text": false,
+      "trim_in": 0.0,
+      "trim_out": 35.3
     },
     {
       "file": "🌸__𝙽𝚊𝚍𝚒𝚗𝚎_🌸.mp4",

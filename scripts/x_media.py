@@ -181,6 +181,10 @@ def classify_clip(path: Path) -> dict:
     if content:
         entry["content"] = content["rect"]
         entry["content_coverage"] = content["coverage"]
+    edges = detect_black_edges(path)
+    if edges:
+        entry["trim_in"] = edges["trim_in"]
+        entry["trim_out"] = edges["trim_out"]
     entry["usable"] = True
     entry["note"] = f"luma {mean_luma:.0f}, warmth {warmth:+.0f}, motion {diff:.1f}"
     return entry
@@ -386,10 +390,12 @@ def backfill_content(workflow: str) -> int:
     clips_dir = ROOT / wf["media_dir"]
 
     fixed = 0
+    trims = 0
     for c in data["clips"]:
         if not c.get("usable"):
             continue
-        content = detect_content_rect(clips_dir / c["file"])
+        src = clips_dir / c["file"]
+        content = detect_content_rect(src)
         if content:
             c["content"] = content["rect"]
             c["content_coverage"] = content["coverage"]
@@ -399,9 +405,63 @@ def backfill_content(workflow: str) -> int:
         else:
             c.pop("content", None)
             c.pop("content_coverage", None)
+
+        edges = detect_black_edges(src)
+        if edges:
+            c["trim_in"] = edges["trim_in"]
+            c["trim_out"] = edges["trim_out"]
+            trims += 1
+            print(f"  {c['file'][:44]:<44} black lead/tail -> use "
+                  f"{edges['trim_in']:.2f}s .. {edges['trim_out']:.2f}s", flush=True)
+        else:
+            c.pop("trim_in", None)
+            c.pop("trim_out", None)
     scenes_path.write_text(json.dumps(data, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
-    print(f"{workflow}: {fixed} clip(s) letterboxed; the renderer crops to their content")
+    print(f"{workflow}: {fixed} clip(s) letterboxed, {trims} clip(s) with black lead/tail")
     return 0
+
+
+def detect_black_edges(path: Path) -> dict:
+    """Find black fade-in / fade-out at the head and tail of a clip.
+
+    Measured 2026-10-31 on the first delivered jephter video: `blackdetect` found black intervals at
+    **21.9 s, 29.4 s and 34.1 s** — each one exactly on a clip boundary, because stock clips fade up
+    from black and down to black. A cut that starts at frame 0 of such a clip therefore shows a black
+    frame for up to ~0.7 s, which reads as a broken video.
+
+    Returns `{"trim_in": seconds, "trim_out": seconds}` — the window worth using — or `{}` when the
+    clip is clean end to end.
+    """
+    dur = probe(path).get("duration", 0)
+    if dur <= 1.0:
+        return {}
+    r = subprocess.run(
+        [ffmpeg(), "-hide_banner", "-nostats", "-i", str(path),
+         "-vf", "blackdetect=d=0.08:pix_th=0.10", "-an", "-f", "null", "-"],
+        capture_output=True, text=True, errors="ignore",
+    )
+    spans = []
+    for line in (r.stderr or "").splitlines():
+        if "black_start" in line and "black_end" in line:
+            try:
+                start = float(line.split("black_start:")[1].split()[0])
+                end = float(line.split("black_end:")[1].split()[0])
+            except (IndexError, ValueError):
+                continue
+            spans.append((start, end))
+    if not spans:
+        return {}
+
+    trim_in, trim_out = 0.0, dur
+    if spans[0][0] <= 0.25:                      # fades up from black
+        trim_in = round(spans[0][1] + 0.10, 2)
+    if spans[-1][1] >= dur - 0.25:               # fades down to black
+        trim_out = round(spans[-1][0] - 0.10, 2)
+    if trim_in <= 0.0 and trim_out >= dur:
+        return {}
+    if trim_out - trim_in < 1.2:                 # nothing usable left; leave it alone
+        return {}
+    return {"trim_in": trim_in, "trim_out": round(trim_out, 2)}
 
 
 def classify_song(path: Path) -> dict:

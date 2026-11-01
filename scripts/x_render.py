@@ -26,6 +26,7 @@ runs rather than only within one.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import math
 import random
@@ -175,6 +176,8 @@ def pick_cuts(workflow: str, phrases: list[str], seg_durs: list[float], wf: dict
                 "subject": pick.get("subject"),
                 "baked_text": pick.get("baked_text"),
                 "content": pick.get("content"),
+                "trim_in": pick.get("trim_in"),
+                "trim_out": pick.get("trim_out"),
             })
 
     usage["recent_clips"] = ([c for c in usage.get("recent_clips", []) if c not in {p["file"] for p in plan}]
@@ -362,6 +365,33 @@ def build_ass(phrases: list[str], starts: list[float], durs: list[float], cap: d
 # assembly
 # --------------------------------------------------------------------------------------
 
+def clean_source(clip: dict) -> str:
+    """A source path containing only usable picture — no black lead-in, no black tail.
+
+    Looping the raw source re-shows its fade-to-black every time the loop wraps, so the segment has
+    to be built from a trimmed copy. Cached under `out/_clean` keyed by the clip and its window, so
+    it is encoded once and reused by every later video.
+    """
+    trim_in = float(clip.get("trim_in") or 0.0)
+    trim_out = clip.get("trim_out")
+    if trim_in <= 0.0 and not trim_out:
+        return clip["path"]
+
+    src = Path(clip["path"])
+    key = hashlib.sha1(f"{src.name}|{trim_in}|{trim_out}|{src.stat().st_size}".encode()).hexdigest()[:12]
+    cache = ROOT / "out" / "_clean" / f"{key}.mp4"
+    if cache.exists() and cache.stat().st_size > 1024:
+        return str(cache)
+    cache.parent.mkdir(parents=True, exist_ok=True)
+    seek = [str(xf.ffmpeg()), "-y", "-ss", f"{trim_in:.2f}", "-i", str(src)]
+    if trim_out:
+        seek += ["-t", f"{float(trim_out) - trim_in:.2f}"]
+    seek += ["-an", "-c:v", "libx264", "-crf", "18", "-preset", "veryfast",
+             "-pix_fmt", "yuv420p", str(cache)]
+    xf.run(seek)
+    return str(cache) if cache.exists() else clip["path"]
+
+
 def render(workflow: str, phrases: list[str], voice_wavs: list[Path], wf: dict,
            out_name: str | None = None, seed: int | None = None, keep_work: bool = False) -> dict:
     v = wf.get("video", {})
@@ -435,8 +465,9 @@ def render(workflow: str, phrases: list[str], voice_wavs: list[Path], wf: dict,
         if rect:
             cw, ch, cx, cy = (int(v) for v in rect.split(":"))
             pre = f"crop={cw}:{ch}:{cx}:{cy},"
+        src = clean_source(cut)
         r = xf.run([
-            xf.ffmpeg(), "-y", "-stream_loop", "-1", "-i", cut["path"],
+            xf.ffmpeg(), "-y", "-stream_loop", "-1", "-i", src,
             "-t", f"{cut['seconds']:.3f}",
             "-vf", f"{pre}scale={width}:{height}:force_original_aspect_ratio=increase,"
                    f"crop={width}:{height},fps={fps},format=yuv420p,setsar=1",
@@ -552,7 +583,8 @@ def render(workflow: str, phrases: list[str], voice_wavs: list[Path], wf: dict,
         "dropped_phrases": dropped,
         "voice": wf.get("voice", {}).get("name"),
         "cuts": [{k: c[k] for k in ("phrase", "cut", "seconds", "file", "mood", "color_temp",
-                                    "subject", "baked_text", "content")} for c in cuts],
+                                    "subject", "baked_text", "content", "trim_in", "trim_out")}
+                 for c in cuts],
         "song": song,
         "mean_db": lv["mean_db"],
         "peak_db": lv["peak_db"],

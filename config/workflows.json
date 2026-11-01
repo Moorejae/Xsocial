@@ -101,9 +101,9 @@
     "voice": {
       "backend": "gemini",
       "model": "gemini-3.8-flash-tts",
-      "name": "Pulcherrima",
+      "name": "Umbriel",
       "cue": "[speaking slowly and softly, almost in a whisper]",
-      "audition_note": "Chosen 2026-10-27: the most breath in the audition (0.334 quiet ratio) and the second quietest mean level (-29.1 dB) at 2.51 words/s. Distinct from Leda, which is steadier and has far fewer pauses, so the two channels do not sound like the same narrator."
+      "audition_note": "Changed 2026-11-01 at the owner's request: jephter's voice (Leda) was liked, Pulcherrima was not. Re-auditioned 13 voices on an emmanuel line against Leda as the reference. Umbriel is the closest match to Leda's character — quiet ratio 0.156 vs Leda's 0.158 (the same steady, unhesitating pause profile) and 2.09 vs 2.23 words/s — while still being a different timbre, so the two channels stay distinguishable. Pulcherrima was the FASTEST read of the field (2.95 w/s, 5.08 s for 13 words), which is the likely reason it sounded wrong."
     },
     "caption": {
       "font": "fonts/Jost-Bold.ttf",
