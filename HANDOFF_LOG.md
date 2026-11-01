@@ -66,9 +66,37 @@ The channel identity is **Chinedu Jephtah**, proven by the insert response — n
 an upload-only token cannot call. The 49.7 s render went up **unlisted** on purpose: this post exists to
 prove connectivity, not to publish.
 
-**Left open:** emmanuel still cannot post; its consent has to be redone with the YouTube permission ticked
-(a listener is running with a fresh link). The scheduler's `unlisted` → `public` switch is still the owner's
-call. ForChi's `d5b3981` is still local.
+**Then emmanuel was re-consented with the YouTube permission ticked, and it posted too:**
+
+```text
+SAVED emmanuel: authorised Brown Cinema (UCYjRtF_ECcIaF8ldCGXAI2w)
+  - granted: userinfo.email youtube.readonly youtube.upload openid
+
+python scripts\youtube_upload.py --workflow emmanuel --check
+  credential ok: Brown Cinema (UCYjRtF_ECcIaF8ldCGXAI2w)      # channels.list works now
+  granted scopes: userinfo.email youtube.readonly youtube.upload openid
+
+python scripts\x_publish.py --workflow emmanuel --privacy unlisted
+  title: Speak about them with tenderness even when you are angry
+  privacy: unlisted   size: 14963 KB   sha: 4824709c41eaa561
+  posted to: Brown Cinema (UCYjRtF_ECcIaF8ldCGXAI2w)
+  uploaded: https://youtu.be/ic0a904YFS0  (unlisted, state uploaded)   # confirmed by videos.list
+
+Invoke-WebRequest https://youtu.be/ic0a904YFS0  -> 303
+
+x_scheduler.credential_ready:  jephter ready=True   emmanuel ready=True
+```
+
+Both channels are now wired end to end: **Chinedu Jephtah** `CD5_noWEHdU`, **Brown Cinema**
+`ic0a904YFS0`, both unlisted. The second consent also proves the contrast — with `youtube.readonly` present
+the channel read-back works and the upload comes back `state uploaded` instead of `uploaded-unconfirmed`.
+
+**Left open:** the emmanuel channel's own name is **Brown Cinema**, not "Emmanuel" — flagged to the owner in
+case that is the wrong Google account or a channel that has not been renamed. jephter's token has no
+`youtube.readonly`, so its identity evidence stays the insert response and `--check` cannot name the channel;
+one extra consent fixes that whenever it is convenient. The scheduler's `unlisted` → `public` switch is still
+the owner's call. ForChi's `d5b3981` is still local.
+
 
 ---
 
