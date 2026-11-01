@@ -453,17 +453,28 @@ class _MultiCallback(http.server.BaseHTTPRequestHandler):
                     # succeeding: on 2026-11-01 a 403 from channels.list (missing read scope) threw
                     # away two perfectly good refresh tokens.
                     title, channel_id = whoami_safe(tokens["access_token"])
+                    granted_scopes = tokens.get("scope", " ".join(SCOPES)).split()
                     save(workflow, {
                         "workflow": workflow, "client_id": cid, "client_secret": secret,
                         "refresh_token": tokens["refresh_token"],
                         "redirect_uri": redirect_uri(workflow, port),
-                        "scopes": tokens.get("scope", " ".join(SCOPES)).split(),
+                        "scopes": granted_scopes,
                         "channel_title": title, "channel_id": channel_id,
                         "obtained_at": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
                     })
                     _MultiCallback.saved[workflow] = {"channel_title": title, "channel_id": channel_id}
-                    ok, message = True, f"{workflow}: authorised {title} ({channel_id})"
-                    print(f"\n  SAVED {message}", flush=True)
+                    short = " ".join(s.rsplit("/", 1)[-1] for s in granted_scopes)
+                    # A consent that omits youtube.upload cannot post. Say so on the page, while the
+                    # owner is still looking at it, instead of letting the scheduler discover it.
+                    if not any(s.endswith("/youtube.upload") for s in granted_scopes):
+                        ok = False
+                        message = (f"{workflow}: saved, but the YouTube permission was NOT granted "
+                                   f"(granted: {short}). Open the {workflow} link again and tick it.")
+                        print(f"\n  MISSING SCOPE {message}", flush=True)
+                    else:
+                        ok = True
+                        message = f"{workflow}: authorised {title} ({channel_id}) - granted: {short}"
+                        print(f"\n  SAVED {message}", flush=True)
             except SystemExit as exc:
                 message = str(exc)[:200]
             except Exception as exc:                     # noqa: BLE001 - report, never crash the server

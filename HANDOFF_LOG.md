@@ -4,6 +4,74 @@ Newest first. Every change gets an entry, with evidence. See [AGENTS.md](AGENTS.
 
 ---
 
+## 2026-11-01 (first real post: jephter is live, and the granted scope is the only gate that matters)
+
+**Plane(s):** this folder only. One `videos.insert` to jephter; no host touched.
+
+**Asked:** the standing request to prove the channels are connected by posting; this entry records what
+consent actually returned and what it took to get a video out.
+
+**What the two consents returned.** Both tokens were saved this time — the `whoami_safe()` change from the
+entry below did its job — and reading the *granted* scopes changed the picture completely:
+
+| Channel | Granted | Read back |
+| :--- | :--- | :--- |
+| jephter | `userinfo.email youtube.upload openid` | 403 (no read scope) |
+| emmanuel | `userinfo.email openid` | 403 (no read scope) |
+
+So emmanuel's consent carried **no YouTube permission at all** — the permission is unticked on the consent
+screen, or an older link (minted before `youtube.readonly` was added) was opened. Had that gone unnoticed,
+every emmanuel insert would have been refused while the credential looked perfectly healthy, and
+`credential_ready()` would have burned all three attempts of both daily slots. That is the exact failure the
+gate exists to prevent, so the gate was wrong, not the schedule.
+
+**Changed:**
+
+| File | Change |
+| :--- | :--- |
+| `scripts/youtube_upload.py` | **new** `granted_scopes()` reads the granted scope list from the sealed token (no network) and `main()` prints it, then refuses early when `youtube.upload` is absent |
+| `scripts/youtube_upload.py` | `channel_of()` returns `(unread: no read scope)` instead of raising on 401/403; `confirm()` returns `uploaded-unconfirmed` when `videos.list` is refused — a run whose upload landed must never be reported as failed |
+| `scripts/youtube_upload.py` | identity now comes from the **insert response** (`snippet.channelId` / `channelTitle`), written into the ledger as `channel` + `channel_id` |
+| `scripts/x_scheduler.py` | `credential_ready()` gates on `youtube.upload` being granted, not merely on a refresh token existing |
+| `scripts/youtube_auth.py` | the callback page prints the granted scopes, and reports **not authorised** when `youtube.upload` is missing, so the mistake is visible in the browser |
+| `skills/x-publishing` | sections *A stored token is not a usable token* and *Identity without a read scope*; three new failure rows |
+
+The rule this leaves behind: **a refresh token proves who consented, not what they consented to.** Only the
+granted scope list says whether `videos.insert` will be allowed, and it is free to read — so read it before
+an upload, not after.
+
+**Verified:**
+
+```text
+python scripts\youtube_upload.py --selftest                -> selftest passed
+python scripts\youtube_upload.py --workflow jephter   --check
+  granted scopes: userinfo.email youtube.upload openid     -> exit 0, can post
+python scripts\youtube_upload.py --workflow emmanuel --check
+  granted scopes: userinfo.email openid
+  emmanuel: this token was consented WITHOUT youtube.upload...  -> exit 1, refuses
+
+python -c "import x_scheduler as s; s.credential_ready('emmanuel')"
+  emmanuel  ready=False  consented without youtube.upload   # the gate now holds
+
+python scripts\x_publish.py --workflow jephter --privacy unlisted
+  title: I promised myself that staying unattached was the gentlest way to live
+  privacy: unlisted   size: 29943 KB   sha: 14a01ff068f22823
+  posted to: Chinedu Jephtah (UCdp3tJItzt-sI-9UGX9CCvw)
+  uploaded: https://youtu.be/CD5_noWEHdU  (as requested, state uploaded-unconfirmed)
+
+Invoke-WebRequest https://youtu.be/CD5_noWEHdU   -> 303 See Other   # the video exists
+```
+
+The channel identity is **Chinedu Jephtah**, proven by the insert response — not by `channels.list`, which
+an upload-only token cannot call. The 49.7 s render went up **unlisted** on purpose: this post exists to
+prove connectivity, not to publish.
+
+**Left open:** emmanuel still cannot post; its consent has to be redone with the YouTube permission ticked
+(a listener is running with a fresh link). The scheduler's `unlisted` → `public` switch is still the owner's
+call. ForChi's `d5b3981` is still local.
+
+---
+
 ## 2026-11-01 (the 403 on both channels: a read scope, and a token that must outlive the read-back)
 
 **Plane(s):** this folder only. Nothing was sent to either Google console; no host was touched.

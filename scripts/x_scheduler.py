@@ -185,21 +185,31 @@ def post(workflow: str, video: Path, privacy: str, dry_run: bool) -> int:
 # --------------------------------------------------------------------------------------
 
 def credential_ready(workflow: str) -> tuple[bool, str]:
-    """Is a refresh token present? No network, no side effect.
+    """Can this workflow actually post? No network, no side effect.
 
     ForChi learned this the expensive way — `authGate.youtubeReady()` runs before build *and*
     publish, because six builds succeeded and every publish then failed. Here the gate matters for a
     second reason: a missing credential must not consume one of the three attempts for a slot, or the
     day is lost to a problem the schedule cannot fix.
+
+    A stored refresh token is not enough. On 2026-11-01 emmanuel's consent came back without
+    `youtube.upload`, so every insert would have been refused while the token looked fine — three
+    attempts burned per slot, two slots a day, silently. The granted scope is the real gate.
     """
     sys.path.insert(0, str(ROOT / "scripts"))
     import youtube_upload as yt
 
     try:
         cred = yt.credentials(workflow)
-        return bool(cred.get("refresh_token")), ""
     except SystemExit as exc:
         return False, str(exc).splitlines()[0][:160]
+    if not cred.get("refresh_token"):
+        return False, f"{workflow}: no refresh token — run youtube_auth.py --serve"
+    scopes = yt.granted_scopes(workflow)
+    if scopes and "youtube.upload" not in scopes:
+        return False, (f"{workflow}: consented without youtube.upload "
+                       f"(granted {' '.join(scopes)}) — re-authorise the channel")
+    return True, ""
 
 
 def run_pass(workflows: tuple[str, ...], privacy: str, dry_run: bool, seed: int | None,

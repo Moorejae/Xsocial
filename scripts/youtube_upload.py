@@ -7,8 +7,8 @@ Why this shape
 * **A ledger claim BEFORE the side effect.** `upload:4` in the pipeline this borrows from is the most
   dangerous number in that file: a socket timeout *after* YouTube accepted the upload produced a
   second public video. So the claim is written and flushed first, and a retry reads it and refuses.
-* **`--check` never uploads.** Proving the credential works is `channels.list(mine=true)` and nothing
-  else, which costs 1 quota unit and cannot publish anything.
+* **`--check` never uploads.** It proves the refresh token works, prints the scopes Google actually
+  granted, and reads the channel back if a read scope allows it — no insert, nothing published.
 * **Private by default.** `--privacy public` has to be asked for explicitly, because the failure this
   protects against is an accidental publish, not an accidental private video.
 
@@ -172,14 +172,42 @@ def access_token(cred: dict) -> str:
     return token
 
 
+def granted_scopes(workflow: str) -> list[str]:
+    """The scopes Google actually granted at consent time, short names only.
+
+    This is the check that matters before an upload: `youtube.upload` present means `videos.insert` is
+    allowed. A token without it refreshes happily and then fails every insert, so the failure would only
+    surface days later in the scheduler. See skills/x-publishing.
+    """
+    path = SECRETS / f"{workflow}.json"
+    if not path.exists():
+        return []
+    try:
+        raw = json.loads(path.read_text(encoding="utf-8")).get("scopes") or []
+    except (OSError, json.JSONDecodeError):
+        return []
+    return [s.rsplit("/", 1)[-1] for s in raw]
+
+
 def channel_of(token: str) -> dict:
+    """Which channel this token belongs to — best effort, never fatal.
+
+    `channels.list` needs a read scope and a token granted only `youtube.upload` does not have one, so an
+    unreadable identity returns None instead of raising. Uploading proves the identity anyway: the
+    `videos.insert` response carries `snippet.channelId` and `snippet.channelTitle`.
+    """
     url = f"{API}/channels?part=snippet,contentDetails&mine=true"
     req = urllib.request.Request(url, headers={"authorization": f"Bearer {token}"})
-    with urllib.request.urlopen(req, timeout=60) as r:
-        body = json.loads(r.read().decode())
+    try:
+        with urllib.request.urlopen(req, timeout=60) as r:
+            body = json.loads(r.read().decode())
+    except urllib.error.HTTPError as e:
+        if e.code in (401, 403):
+            return {"id": None, "title": "(unread: no read scope)"}
+        raise
     items = body.get("items") or []
     if not items:
-        raise SystemExit("this Google account owns no YouTube channel")
+        return {"id": None, "title": "(no channel on this account)"}
     it = items[0]
     return {"id": it["id"], "title": it["snippet"]["title"]}
 
@@ -297,11 +325,20 @@ def upload(token: str, path: Path, meta: dict, timeout: float = 1800.0) -> dict:
 def confirm(token: str, video_id: str) -> dict:
     url = f"{API}/videos?part=status,snippet&id={video_id}"
     req = urllib.request.Request(url, headers={"authorization": f"Bearer {token}"})
-    with urllib.request.urlopen(req, timeout=60) as r:
-        body = json.loads(r.read().decode())
+    try:
+        with urllib.request.urlopen(req, timeout=60) as r:
+            body = json.loads(r.read().decode())
+    except urllib.error.HTTPError as e:
+        if e.code in (401, 403):
+            # `youtube.upload` does not authorise videos.list either. The upload itself already
+            # succeeded, so report it as unconfirmed instead of failing a run that did post.
+            return {"title": "(unconfirmed)", "privacy": "as requested",
+                    "upload_status": "uploaded-unconfirmed"}
+        raise
     items = body.get("items") or []
     if not items:
-        raise SystemExit(f"uploaded video {video_id} is not readable back — treat as failed")
+        return {"title": "(unconfirmed)", "privacy": "as requested",
+                "upload_status": "uploaded-unconfirmed"}
     return {"title": items[0]["snippet"]["title"],
             "privacy": items[0]["status"]["privacyStatus"],
             "upload_status": items[0]["status"].get("uploadStatus")}
@@ -365,8 +402,16 @@ def main() -> int:
 
     cred = credentials(a.workflow)
     token = access_token(cred)
+    scopes = granted_scopes(a.workflow)
     ch = channel_of(token)
-    print(f"  credential ok: {ch['title']} ({ch['id']})")
+    identity = ch["title"] + (f" ({ch['id']})" if ch["id"] else "")
+    print(f"  credential ok: {identity}")
+    print(f"  granted scopes: {' '.join(scopes) or '(unknown)'}")
+    if scopes and "youtube.upload" not in scopes:
+        raise SystemExit(
+            f"{a.workflow}: this token was consented WITHOUT youtube.upload, so videos.insert will be "
+            f"refused.\n  re-authorise it:\n    python scripts\\youtube_auth.py --serve --timeout 900\n"
+            f"  then open the {a.workflow} link and tick the YouTube permission")
 
     if a.check:
         print("  --check only: nothing uploaded")
@@ -412,11 +457,19 @@ def main() -> int:
         raise SystemExit(f"upload returned no video id: {json.dumps(resp)[:300]}")
     info = confirm(token, vid)
 
+    # The insert response is the identity proof when there is no read scope to call channels.list with.
+    inserted = resp.get("snippet") or {}
+    channel_name = inserted.get("channelTitle") or ch["title"]
+    channel_id = inserted.get("channelId") or ch["id"]
+    if channel_id:
+        print(f"  posted to: {channel_name} ({channel_id})")
+
     ledger["claims"][f"{a.workflow}:{digest}"]["status"] = "uploaded"
     ledger["claims"][f"{a.workflow}:{digest}"]["video_id"] = vid
     ledger.setdefault("published_by_hash", {})[f"{a.workflow}:{digest}"] = {
         "video_id": vid, "at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
-        "privacy": info["privacy"], "channel": ch["title"], "status": "uploaded",
+        "privacy": info["privacy"], "channel": channel_name, "channel_id": channel_id,
+        "status": "uploaded",
     }
     ledger.setdefault("published", []).append({
         "workflow": a.workflow, "video_id": vid, "title": info["title"],

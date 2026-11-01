@@ -80,6 +80,42 @@ When a consent link is regenerated, confirm the scope **in the URL** before open
 `--serve` listener must be restarted after editing `SCOPES`, or the owner will authorise an old scope and
 hit the same 403.
 
+### A stored token is not a usable token — check the *granted* scope
+
+The URL asks for scopes; Google decides what to grant, and the consent screen lets a permission be left
+unticked. On 2026-11-01 the two channels came back like this:
+
+| Channel | Granted | Consequence |
+| :--- | :--- | :--- |
+| jephter | `userinfo.email youtube.upload openid` | could post, could not read the channel back |
+| emmanuel | `userinfo.email openid` | **every `videos.insert` would be refused** |
+
+So `youtube_upload.py` now prints `granted scopes:` on every run and refuses early when `youtube.upload` is
+missing, and `credential_ready()` in `x_scheduler.py` gates on that scope rather than on the presence of a
+refresh token. The reason is the failure mode: a token without upload rights refreshes perfectly, so the
+scheduler would burn all three attempts of every slot, twice a day, with a credential that looks healthy.
+
+```powershell
+python scripts\youtube_upload.py --workflow emmanuel --check   # prints the granted scopes, uploads nothing
+```
+
+`youtube_auth.py`'s callback page now names the granted scopes and reports **not authorised** when
+`youtube.upload` is absent, so the owner sees it in the browser while they are still in the consent flow.
+
+### Identity without a read scope: read the insert response
+
+`channels.list` and `videos.list` both need a read scope; `youtube.upload` grants neither. So with an
+upload-only token:
+
+- `channel_of()` returns `{"id": None, "title": "(unread: no read scope)"}` instead of raising
+- the upload is the identity proof — `videos.insert` answers with `snippet.channelId` and
+  `snippet.channelTitle` (this is how jephter was confirmed as **Chinedu Jephtah**
+  `UCdp3tJItzt-sI-9UGX9CCvw`), and both are written to the ledger
+- `confirm()` reports `uploaded-unconfirmed` rather than failing a run whose upload already landed
+- an external check: `Invoke-WebRequest https://youtu.be/<id>` answers **303** when the video exists
+
+Prefer re-consenting with `youtube.readonly` when it is convenient, but never make the post depend on it.
+
 ## Publishing
 
 ```powershell
@@ -189,6 +225,8 @@ but does not copy the libraries). Then a `*.timer` with `OnCalendar=*:0/15` call
 | `over the 50s cap — not publishing` | a manual render with a longer script | re-render; the cap comes from `config/workflows.json` |
 | consent succeeded but the wrong channel appears | signed in as the wrong Google account | revoke at `myaccount.google.com/permissions`, redo |
 | `forchi: no refresh token in its .env or its jobs database` | ForChi's token lives in its **deployment**, not this workstation | set `YOUTUBE_REFRESH_TOKEN` in ForChi's `.env`, or run `youtube_auth.py --workflow forchi` |
+| `consented WITHOUT youtube.upload` | the permission was unticked on the consent screen, or an older link was opened | open a link printed by the **current** listener and leave the YouTube checkbox ticked |
+| `privacy: as requested (unconfirmed)` | `videos.list` is also blocked by an upload-only token | nothing broken — the upload landed; check the `youtu.be` link, which answers `303` |
 
 ## Verification
 
