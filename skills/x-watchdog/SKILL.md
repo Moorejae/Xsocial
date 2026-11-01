@@ -93,8 +93,11 @@ owner**, not the operator. So the watchdog mails them, twice, with warning to sp
 | :--- | :--- | :--- |
 | day 1 | nobody — granted today | — |
 | **day 4** | `channel_email` in `config/workflows.json` | open a link, keep the YouTube box ticked, reply with the address bar |
-| **day 5** | same | same |
+| **day 5** | same | same, worded as the **final** reminder — "the channel stops publishing in 2 days" |
 | day 6-7 | nobody — already asked twice | — |
+
+The day-5 mail is deliberately not a copy of the day-4 mail: a duplicate is ignored exactly when it must not be.
+The owner named the 5th as the day the links should land, and consent day + 4 = the 5th for a 1 Nov grant.
 
 Rules that make it safe to leave running:
 

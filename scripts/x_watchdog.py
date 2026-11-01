@@ -238,19 +238,31 @@ def mark_reminded(workflow: str, obtained_at: str, day: int, path: Path = REMIND
     path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
 
 
-def reminder_message(workflow: str, day: int, link: str, expires_on: str) -> tuple[str, str]:
+def reminder_message(workflow: str, day: int, link: str, expires_on: str,
+                     final: bool = False) -> tuple[str, str]:
     """The re-authorisation mail a channel owner actually has to act on.
 
     It is addressed to the person who owns the Google account, so it explains the loopback trap
     rather than assuming a technical reader: the link must be opened signed in as that channel, and
     the browser will end on an error page whose address is the thing we need back.
+
+    `final` marks the last reminder of the two. The owner asked for the 5th to be the day the links
+    land, so that mail reads like the one that matters — a second copy of the first would be ignored
+    exactly when it must not be.
     """
     name = {"jephter": "Jephter", "emmanuel": "Emmanuel"}.get(workflow, workflow.title())
-    subject = f"Action needed: reconnect the {name} YouTube channel (day {day} of 7)"
+    if final:
+        subject = f"Reminder: the {name} YouTube channel stops publishing in 2 days"
+        opening = ("This is the second and last reminder. Without one sign-in, the {n} channel stops\n"
+                   "publishing short videos on {d}.\n\n").format(n=name, d=expires_on)
+    else:
+        subject = f"Action needed: reconnect the {name} YouTube channel"
+        opening = ("The Google permission that lets the {n} channel publish short videos expires on\n"
+                   "{d}. It has to be renewed by signing in once — it takes about a minute.\n\n"
+                   ).format(n=name, d=expires_on)
     body = (
         f"Hello,\n\n"
-        f"The Google permission that lets the {name} channel publish short videos expires on\n"
-        f"{expires_on}. It has to be renewed by signing in once — it takes about a minute.\n\n"
+        f"{opening}"
         f"WHAT TO DO\n"
         f"  1. Open this link in a browser, signed in as the Google account that owns the\n"
         f"     {name} YouTube channel:\n\n"
@@ -268,6 +280,7 @@ def reminder_message(workflow: str, day: int, link: str, expires_on: str) -> tup
         f"  The tool receives the approval on the machine it runs on, so the browser has to hand the\n"
         f"  approval back there. Sending the address is how that hand-off is done safely: the code is\n"
         f"  short-lived and grants only this one channel.\n\n"
+        f"Nothing else about the channel changes: the videos already published stay published.\n\n"
         f"If you would rather not do this, reply and we will arrange a time to do it together.\n\n"
         f"— {name} publishing tool\n"
     )
@@ -433,13 +446,14 @@ def run_reminders(now: datetime, days: tuple[int, ...], settings: dict[str, str]
             continue
         link = ya.consent_url(wf, cid)
         expires = (datetime.fromisoformat(obtained) + timedelta(days=7)).strftime("%d %B %Y")
-        subject, body = reminder_message(wf, day, link, expires)
+        # The last day in --remind-days is the one the owner waits for; it is worded as final.
+        subject, body = reminder_message(wf, day, link, expires, final=(day == max(days)))
         to = override_to or (cfg.get(wf) or {}).get("channel_email") or (cfg.get(wf) or {}).get("contact_email")
         if not to:
             notes.append(f"{wf}: no channel_email in config/workflows.json")
             continue
         if dry_run:
-            notes.append(f"{wf}: day {day} reminder WOULD go to {to}")
+            notes.append(f"{wf}: day {day} reminder WOULD go to {to} — \"{subject}\"")
             notes.append("  " + link)
             continue
         result = send(subject, body, settings, to)
@@ -534,8 +548,16 @@ def selftest() -> int:
         subject, body = reminder_message("jephter", 4, "https://example.invalid/consent", "08 November 2026")
         for needle in ("localhost:8765/jephter/callback", "address bar", "YouTube box"):
             assert needle in body, needle
-        assert "day 4" in subject, subject
         print("ok   the reminder explains the loopback trap instead of assuming a technical reader")
+
+        first_subject, first_body = reminder_message("jephter", 4, "L", "08 November 2026")
+        last_subject, last_body = reminder_message("jephter", 5, "L", "08 November 2026", final=True)
+        assert "Action needed" in first_subject, first_subject
+        assert "stops publishing" in last_subject, last_subject
+        assert "second and last reminder" in last_body, last_body[:80]
+        assert "second and last reminder" in last_body, last_body[:80]
+        assert "day" not in first_subject.lower(), "a client should not see internal day counting"
+        print("ok   the day-5 mail reads as the final one, not a copy of the day-4 mail")
     return 0
 
 

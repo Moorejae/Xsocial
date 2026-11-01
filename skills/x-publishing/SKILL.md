@@ -33,6 +33,17 @@ Both new accounts were added to the **same audience** as ForChi's client, so `GO
 `GOOGLE_CLIENT_SECRET` are ForChi's — read from `C:\Users\hp\forchi\.env` in place if this project's `.env`
 does not carry them. Nothing is copied.
 
+**The channel's own name is not the workflow name.** The `emmanuel` workflow publishes to a channel called
+**Brown Cinema** (`UCYjRtF_ECcIaF8ldCGXAI2w`), and `jephter` to **Chinedu Jephtah** (`UCdp3tJItzt-sI-9UGX9CCvw`).
+Anything a viewer reads — the description footer — must use the channel title the credential reports, not the
+config label: `metadata_for(..., channel_name=ch["title"])`.
+
+**Re-authorisation mail** goes to `channel_email` in `config/workflows.json` (the owner's inbox per channel), never
+to the operator's `contact_email`. Day 4 and day 5 of the refresh token's 7-day life, once per grant per day, not
+before 09:00, and the day-5 mail is worded as the final one. The redirect is a loopback URI, so the owner's browser
+ends on an error page with the code in the address bar — `youtube_auth.py --from-url "<that url>"` exchanges it.
+Full rules: `x-watchdog`.
+
 ## The one console step still needed
 
 ForChi's client is a **Web application**, so its authorised redirect URIs are an explicit list. Add both
@@ -123,6 +134,33 @@ python -c "import json,urllib.request,urllib.parse;q='https://www.youtube.com/oe
 ```
 
 Prefer re-consenting with `youtube.readonly` when it is convenient, but never make the post depend on it.
+
+### What the upload token cannot do afterwards
+
+`videos.update` — the only way to change a title, description, tags or **privacy** after upload — does **not**
+accept `youtube.upload`. Google's reference lists exactly three accepted scopes: `youtubepartner`, `youtube`,
+`youtube.force-ssl` (quota cost 50 units). `videos.delete` is the same.
+
+Consequence, measured 2026-11-01: the two unlisted connectivity-proof videos (`CD5_noWEHdU` on Chinedu Jephtah,
+`ic0a904YFS0` on Brown Cinema) **cannot be made public, edited or deleted** by the tokens that uploaded them. That
+is a scope fact, not a bug, and it is why the pipeline treats `--privacy` as a decision made *before* the insert.
+
+The seam for a deliberate correction:
+
+```powershell
+# .env — opt-in, applies to the NEXT consent only. Broadens what the client approves, so not default.
+X_EXTRA_SCOPES=https://www.googleapis.com/auth/youtube.force-ssl
+```
+
+Then re-authorise that channel (`youtube_auth.py --serve`, or the day-4/day-5 link) and the new token can update.
+Default stays minimal on purpose: a publishing tool should not hold write access to everything else on a client's
+channel, and `youtube.upload` is far easier to justify in a Google verification review than `youtube.force-ssl`.
+
+Verify which scopes a token actually carries, without any network call:
+
+```powershell
+python scripts\youtube_upload.py --workflow emmanuel --check    # "granted scopes: ..."
+```
 
 ## Publishing
 

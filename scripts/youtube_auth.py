@@ -70,6 +70,28 @@ SCOPES = (
 )
 
 
+def scopes() -> list[str]:
+    """The scopes to request: the minimum above, plus anything named in `X_EXTRA_SCOPES`.
+
+    Why the seam exists: `videos.update` — the only way to correct a title, description, tags or
+    privacy after upload — refuses `youtube.upload`. Google's own reference lists exactly three
+    accepted scopes for it: `youtubepartner`, `youtube`, `youtube.force-ssl`. So a metadata mistake
+    cannot be fixed by the token that created it, and re-consenting mid-week without warning is not
+    something to do to a client by surprise.
+
+    Keeping the default minimal is deliberate — a publishing tool should not hold write access to
+    everything else on the channel. When a correction is genuinely needed, set
+    `X_EXTRA_SCOPES=https://www.googleapis.com/auth/youtube.force-ssl` and the next consent (the
+    day-4/day-5 re-authorisation already happens) carries it.
+    """
+    extra = [s.strip() for s in read_env("X_EXTRA_SCOPES").replace(",", " ").split() if s.strip()]
+    out = list(SCOPES)
+    for s in extra:
+        if s not in out:
+            out.append(s)
+    return out
+
+
 def read_env(name: str) -> str:
     try:
         for line in ENV_FILE.read_text(encoding="utf-8", errors="replace").splitlines():
@@ -132,7 +154,7 @@ def consent_url(workflow: str, client_id: str, port: int = DEFAULT_PORT) -> str:
         "client_id": client_id,
         "redirect_uri": redirect_uri(workflow, port),
         "response_type": "code",
-        "scope": " ".join(SCOPES),
+        "scope": " ".join(scopes()),
         "access_type": "offline",
         "prompt": "consent",          # without this a re-run returns no refresh_token
         "include_granted_scopes": "true",
@@ -354,7 +376,7 @@ def interactive_consent(workflow: str, client_id: str, client_secret: str, port:
         "client_secret": client_secret,
         "refresh_token": tokens["refresh_token"],
         "redirect_uri": redirect_uri(workflow, port),
-        "scopes": tokens.get("scope", " ".join(SCOPES)).split(),
+        "scopes": tokens.get("scope", " ".join(scopes())).split(),
         "channel_title": title,
         "channel_id": channel_id,
         "obtained_at": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
@@ -413,6 +435,32 @@ def selftest() -> int:
         mode = oct(path.stat().st_mode)[-3:]
         platform_note = "posix mode, enforced on Linux" if os.name == "posix" else "posix mode is not enforced on Windows"
     print(f"ok   no plaintext in the written file ({mode}: {platform_note})")
+
+    # The scope request: minimal by default, and only widened on purpose. Checked without touching
+    # the real .env, so a stray value can never make this test pass by accident.
+    global ENV_FILE
+    original = ENV_FILE
+    try:
+        if scopes() != list(SCOPES):
+            print("FAIL the default scope request is not the minimum")
+            return 1
+        print("ok   the scope request is the minimum unless X_EXTRA_SCOPES says otherwise")
+        with tempfile.TemporaryDirectory() as d:
+            probe = Path(d) / ".env"
+            probe.write_text("X_EXTRA_SCOPES=https://www.googleapis.com/auth/youtube.force-ssl\n",
+                             encoding="utf-8")
+            ENV_FILE = probe
+            widened = scopes()
+            if widened[:len(SCOPES)] != list(SCOPES) or widened[-1] != "https://www.googleapis.com/auth/youtube.force-ssl":
+                print(f"FAIL X_EXTRA_SCOPES did not append cleanly: {widened}")
+                return 1
+            probe.write_text("X_EXTRA_SCOPES=\n", encoding="utf-8")
+            if scopes() != list(SCOPES):
+                print("FAIL an empty X_EXTRA_SCOPES changed the request")
+                return 1
+        print("ok   X_EXTRA_SCOPES widens the request, and an empty value leaves it alone")
+    finally:
+        ENV_FILE = original
     return 0
 
 
@@ -453,7 +501,7 @@ class _MultiCallback(http.server.BaseHTTPRequestHandler):
                     # succeeding: on 2026-11-01 a 403 from channels.list (missing read scope) threw
                     # away two perfectly good refresh tokens.
                     title, channel_id = whoami_safe(tokens["access_token"])
-                    granted_scopes = tokens.get("scope", " ".join(SCOPES)).split()
+                    granted_scopes = tokens.get("scope", " ".join(scopes())).split()
                     save(workflow, {
                         "workflow": workflow, "client_id": cid, "client_secret": secret,
                         "refresh_token": tokens["refresh_token"],
@@ -566,7 +614,7 @@ def exchange_pasted(workflow: str, pasted: str, port: int,
               f"before; revoke at myaccount.google.com/permissions and use a fresh link", file=sys.stderr)
         return 1
     title, channel_id = whoami_safe(tokens["access_token"])
-    granted = tokens.get("scope", " ".join(SCOPES)).split()
+    granted = tokens.get("scope", " ".join(scopes())).split()
     save(workflow, {
         "workflow": workflow, "client_id": cid, "client_secret": secret,
         "refresh_token": tokens["refresh_token"],

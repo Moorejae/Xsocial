@@ -8,6 +8,42 @@ If you are an agent: read this file top to bottom, then load the skills named in
 
 ---
 
+## 0. MANDATORY START — no exceptions, no shortcuts
+
+> **This is compulsory for every AI agent, now and in future.** It is not advice and it is not optional. An agent
+> that skips it will re-derive a solved problem, retry a recorded dead end, or repeat a mistake that already cost
+> this project a working day. The owner made this a standing instruction on 2026-11-01.
+
+Do these three, **in this order, before your first edit or command**:
+
+| # | Read | Minimum |
+| :--- | :--- | :--- |
+| 1 | **`AGENTS.md`** (this file) | all of it. §1 is a hard prohibition; §8 governs anything unattended |
+| 2 | **`HANDOFF_LOG.md`** | the **newest entry first** — the file is newest-first on purpose. Keep going until you reach work you already understand |
+| 3 | **`skills/`** | list the folder, then open every skill whose `description` matches the task. Descriptions say *when* to use a skill — decide from that sentence, not the title |
+
+Then, and only then, start. And at the end, before you report done:
+
+- **append a handoff entry** (§6 shape) that names the **skills you actually read** and shows the evidence;
+- **write or extend a skill** (§7) for anything you learned that a future agent would otherwise rediscover.
+
+`.github/copilot-instructions.md` repeats this list for editors that load it automatically; it is the same rule.
+
+### Why "compulsory" is literal here
+
+Each of these cost real time, and each is already written down:
+
+| What happened | Where it is recorded |
+| :--- | :--- |
+| A `403` threw away **two valid refresh tokens**, because a read-back was allowed to fail the save | §12, `skills/x-publishing` |
+| A scheduled task **never ran on schedule for seven passes** and wrote nothing anywhere | §8, `skills/x-watchdog` |
+| A key file was one `git add` from a **public** repository | §9, `.githooks/pre-commit` |
+| A voice was rejected three times before the cause was measured: **pace, not timbre** | §12, `skills/x-voice-personas` |
+
+Skipping the reading does not save time. It spends it again.
+
+---
+
 ## 1. THE ONE HARD PROHIBITION
 
 # 🚫 DO NOT TOUCH THE REZMO VPS — `178.18.245.136`
@@ -202,6 +238,9 @@ Append to [HANDOFF_LOG.md](HANDOFF_LOG.md), newest entry at the top, using this 
 ```markdown
 ## YYYY-MM-DD (one line naming the change)
 
+**Skills loaded:** which `skills/<name>/SKILL.md` files you actually read for this work, and what each one
+changed about your approach. "None — and why" is a valid answer; leaving it out is not.
+
 **Plane(s):** which machine(s) and which part of the system.
 
 **Asked:** what the owner requested, in their words if possible.
@@ -217,6 +256,8 @@ Append to [HANDOFF_LOG.md](HANDOFF_LOG.md), newest entry at the top, using this 
 Rules for the log:
 
 - **Newest first.** The next agent reads the top.
+- **`Skills loaded:` is required.** It is the only visible proof that §0 happened, and it tells the next agent which
+  skill to trust for this area. A change made without reading any skill is fine — an entry that does not say so is not.
 - **Evidence, not assurance.** Paste the check you ran and what it returned.
 - **Record the dead ends.** "Tried X, it failed with Y, do not repeat" is the most valuable line in a handoff.
 - **Never a credential value.** Name the setting; never paste its contents.
@@ -227,6 +268,11 @@ Rules for the log:
 
 When you work something out that a future agent would otherwise have to rediscover, **write it down as a skill.**
 Not a note, not a comment in a chat: a skill file.
+
+**Both halves are compulsory for an agent working here:** *read* the folder at the start (§0), *write to* it before
+you finish. The library is the project's memory of causes; an agent that only reads keeps it current, and an agent
+that only writes leaves it incomplete. The owner's instruction on 2026-11-01 was that this applies to **every agent,
+now and later**, and that the value extends beyond this project — these skills are reused on other work.
 
 - Project-specific → `X\skills\<kebab-name>\SKILL.md`
 - Useful to every project on this machine → also copy into the canonical library (ask the owner first, because that
@@ -338,12 +384,14 @@ anything about permissions.
 
 ## 11. Before you report done
 
+- [ ] You read `AGENTS.md`, the top of `HANDOFF_LOG.md`, and the skills that matched the task (§0).
 - [ ] The thing runs, and you have the command output that proves it.
 - [ ] You re-ran the check after your last change, not before it.
 - [ ] Unrelated behaviour is unchanged.
-- [ ] `HANDOFF_LOG.md` has an entry with evidence.
-- [ ] Any new knowledge is a skill.
+- [ ] `HANDOFF_LOG.md` has an entry with evidence **and a `Skills loaded:` line**.
+- [ ] Any new knowledge is a skill (written or extended), not just a paragraph in the handoff.
 - [ ] No credential appears anywhere in the transcript or the repository.
+- [ ] `git config core.hooksPath` returns `.githooks`, so the pre-commit guard is armed in this clone.
 - [ ] Nothing you did touched `178.18.245.136`.
 
 ---

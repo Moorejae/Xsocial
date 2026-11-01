@@ -42,6 +42,9 @@ The check that proves the fix worked.
 
 ## Rules
 
+- **Read before you write.** An agent working in this project must read `AGENTS.md` §0, the top of
+  [`HANDOFF_LOG.md`](../HANDOFF_LOG.md), and every skill whose `description` matches the task — *before* the first
+  edit. Then write back: a handoff entry naming the skills read, and a skill for anything new.
 - **`name` must equal the folder name.** A mismatch means the skill never loads.
 - **The `description` decides loading.** Say *when* to use it, using the words a person would actually type.
 - **Write from measurement.** Quote real error text and real command output. A skill full of plausible guesses teaches

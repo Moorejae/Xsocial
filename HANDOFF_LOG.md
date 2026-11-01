@@ -4,6 +4,132 @@ Newest first. Every change gets an entry, with evidence. See [AGENTS.md](AGENTS.
 
 ---
 
+## 2026-11-01 (ForChi published; the read-the-memory rule made compulsory; the 5th is the final reminder)
+
+**Skills loaded:** `x-publishing` (scope rules — its `videos.update` gap was the open question this entry
+answers), `x-watchdog` (the reminder ladder and the loopback trap), `x-gemini-key-pool` (only to confirm the
+key file stays name-only in the repo). Reading `x-publishing` first is what turned a vague "why can't I flip the
+video" into a sourced scope fact.
+
+**Plane(s):** this folder, and `C:\Users\hp\forchi` (pushed, not edited).
+
+**Asked:** "commit and publish the remaining locally committed changes made to ForChi… I hope you added the .env
+file to gitignore… I want it to be compulsory that every single AI agent that works now and later read the handoff
+file and also go to the skill folder… the 5th should be the time that the authentication links should be sent."
+
+### 1. ForChi is published
+
+```text
+git push github main
+   9bf7613..a3e4816  main -> main
+git --no-pager log --oneline -1 github/main
+   a3e4816 Shorts: the X formats sit alongside ForChi's own, not instead of them
+git status -sb  ->  ## main...github/main        # level, nothing outstanding
+```
+
+Checked before pushing: the repo is **private** (`gh repo view` → `"visibility":"PRIVATE"`), the diff touches only
+`tools/_video_script.py` and `tools/_video_voice.py`, and a scan for provider-prefixed tokens and private-key
+headers in that diff returned nothing. The HuggingFace `origin` remote was **not** pushed.
+
+### 2. `.env` — verified ignored, and a real gap found
+
+| Check | Result |
+| :--- | :--- |
+| `git check-ignore -v .env` (X) | `.gitignore:8:*.env` — ignored **by shape**, so a `.env.bak` is covered too |
+| `git ls-files --error-unmatch .env` | not tracked |
+| the loose `Gemini api key` file in the repo root | `/Gemini api key` — ignored, not tracked |
+| `git ls-files \| grep -E '\.env\|\.key$\|secret'` | only `.env.example` (template, no values) |
+| every tracked file scanned for 53+-char literals | every hit is an 86-character `---` comment rule |
+
+**The gap:** `git config core.hooksPath` returned **empty** — the pre-commit secret guard existed but was
+**inert**, because it has to be enabled once per clone. Now set to `.githooks`, and the guard was proved both ways
+rather than assumed:
+
+```text
+sh .githooks/pre-commit                      -> exit 0            (a clean staged set passes)
+# a fake `AQ.` token staged on purpose:
+pre-commit: refusing commit: a provider token or private key is in the staged diff
+  staged line 1                                                    (line number only — never the value)
+pre-commit: commit blocked. Keep the value in .env or the ignored key file, and only its NAME in the repo.
+                                             -> exit 1
+```
+
+### 3. Reading the memory is now compulsory
+
+| File | Change |
+| :--- | :--- |
+| `AGENTS.md` | new **§0 MANDATORY START** before the prohibition: read this file, then the top of `HANDOFF_LOG.md`, then the skills whose descriptions match — in that order, before the first edit. Includes a table of four real failures and where each is already recorded, so "skip the reading" is priced honestly |
+| `AGENTS.md` §6 | the handoff template gains a required **`Skills loaded:`** line — the only visible proof §0 happened |
+| `AGENTS.md` §7 | both halves compulsory: read the folder at the start, write to it before finishing |
+| `AGENTS.md` §11 | checklist gains "you read §0 + the log + the skills", "`Skills loaded:` present", and "`core.hooksPath` returns `.githooks`" |
+| `.github/copilot-instructions.md` | **new.** Auto-loaded by editors that support it, so an agent meets the requirement before it can act, with the three reads and the reasons |
+| `skills/README.md` | read-before-write as the first rule |
+
+### 4. The 5th is now the reminder that reads like the one that matters
+
+Consent was 2026-11-01, so day 5 is **2026-11-05** and the token dies **2026-11-08**. Both day-4 and day-5 mails
+are kept (the owner asked for both earlier), but they are no longer the same letter:
+
+| Day | Subject |
+| :--- | :--- |
+| 4 Nov | `Action needed: reconnect the Jephter YouTube channel` |
+| **5 Nov** | `Reminder: the Jephter YouTube channel stops publishing in 2 days` |
+
+`reminder_message(..., final=True)` for the last day in `--remind-days`; its opening says "second and last
+reminder" and names the date publishing stops. A copy of the first mail would be ignored exactly when it must not
+be. Simulated end to end, no mail sent:
+
+```text
+=== simulated 2026-11-04 09:30 ===
+ jephter:  day 4 WOULD go to chineduagu598@gmail.com  — "Action needed: reconnect the Jephter YouTube channel"
+ emmanuel: day 4 WOULD go to steadfast7878@gmail.com  — "Action needed: reconnect the Emmanuel YouTube channel"
+=== simulated 2026-11-05 09:30 ===
+ jephter:  day 5 WOULD go to chineduagu598@gmail.com  — "Reminder: the Jephter YouTube channel stops publishing in 2 days"
+ emmanuel: day 5 WOULD go to steadfast7878@gmail.com  — "Reminder: the Emmanuel YouTube channel stops publishing in 2 days"
+=== simulated 2026-11-06 09:30 ===
+ nothing                # already asked twice
+```
+
+14 watchdog assertions pass, including the new ones: the day-5 wording differs, and `day` never appears in a
+client-facing subject (internal day counting is not the client's business).
+
+### 5. The unlisted video the owner noticed — and why it cannot simply be flipped
+
+Both channels actually hold **two** uploads each, read back from the API:
+
+| Channel | public | unlisted |
+| :--- | :--- | :--- |
+| Chinedu Jephtah | `5icM9D32ssE` | `CD5_noWEHdU` |
+| Brown Cinema | `VoQGv_5c8Oc` | `ic0a904YFS0` |
+
+The unlisted pair are this morning's connectivity proofs — posted unlisted on purpose, before the channel identity
+was confirmed. Flipping them needs `videos.update`, which **does not accept `youtube.upload`**: Google's reference
+lists exactly `youtubepartner`, `youtube`, `youtube.force-ssl` (50 quota units), and `videos.delete` is the same.
+So a token cannot correct its own metadata after insert — a scope fact, not a bug.
+
+Rather than broaden every client consent for a cosmetic fix, `src` gained an opt-in seam:
+
+```text
+X_EXTRA_SCOPES=            # .env.example, empty by default
+scopes()  -> default      : ['youtube.upload', 'youtube.readonly', 'openid', 'email']
+            with force-ssl: [... , 'youtube.force-ssl']     # appended, minimum intact
+            empty value   : unchanged
+```
+
+The default request is **byte-identical to before**, so the consent links the clients receive on 4/5 Nov are
+unchanged. Setting the value and re-authorising is what would allow a later correction — including the "Emmanuel"
+footer that the two live posts still carry.
+
+**Verified:** `youtube_auth.py --selftest` → 5 ok (the two new scope assertions included), `x_watchdog.py
+--selftest` → 14 ok, `youtube_upload.py --selftest` → passed, and `--print-url` still emits
+`youtube.upload+youtube.readonly+openid+email`.
+
+**Left open:** the two unlisted proofs stay unlisted, by decision — publishing them needs a force-ssl consent that
+is not worth broadening every client for. The OAuth app is still in Testing, so publishing stops on 2026-11-08 and
+the 4/5 Nov reminders are the mitigation. The HuggingFace mirror of ForChi is deliberately behind.
+
+---
+
 ## 2026-11-01 (re-authorisation mails to the channel owners on day 4 and day 5; a pasted-URL exchange)
 
 **Plane(s):** this folder only. No host, no upload, no push to ForChi.
