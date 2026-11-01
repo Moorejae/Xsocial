@@ -4,6 +4,96 @@ Newest first. Every change gets an entry, with evidence. See [AGENTS.md](AGENTS.
 
 ---
 
+## 2026-11-01 (both channels go public — and the scheduled task was silently never running)
+
+**Plane(s):** this folder only. Two `videos.insert` calls, one per channel; nothing else touched.
+
+**Asked:** "done, now time to post."
+
+**Changed:**
+
+| File | Change |
+| :--- | :--- |
+| `secrets/youtube/jephter.json` | re-consented 15:08:26 **with** `youtube.readonly`; `--check` now names `Chinedu Jephtah`, so both channels have a full grant and a verifiable identity |
+| `out/jephter/jephter_20261101-152039.mp4` | fresh render, 37.9 s, 6 lines, `magnet o720 - Ghanasian Quilt` at 34.6 s |
+| `out/emmanuel/emmanuel_20261101-151830.mp4` | fresh render, 35.5 s, 8 lines, `Celestial Hearts - Dreamlike Moments` at 13.7 s |
+| `scripts/x_daily.cmd` | **new.** Task Scheduler entry point: `cd` to the repo, one `--once --privacy public` pass, output appended to `out\scheduler.log` |
+| `out/schedule_state.json` | `post:1` and `produce:1` recorded for both workflows with the public links, so the 17:00 / 17:37 passes cannot double-post today |
+
+### The two posts
+
+```text
+python scripts\youtube_upload.py --workflow jephter  --file out\jephter\jephter_20261101-152039.mp4 \
+    --report out\jephter\jephter_20261101-152039.json --privacy public
+  credential ok: Chinedu Jephtah (UCdp3tJItzt-sI-9UGX9CCvw)
+  title: I assumed that letting someone in would always leave me empty
+  uploaded: https://youtu.be/5icM9D32ssE  (public, state uploaded)
+
+python scripts\youtube_upload.py --workflow emmanuel --file out\emmanuel\emmanuel_20261101-151830.mp4 \
+    --report out\emmanuel\emmanuel_20261101-151830.json --privacy public
+  credential ok: Brown Cinema (UCYjRtF_ECcIaF8ldCGXAI2w)
+  title: Forgive them fast when they make a small mistake
+  uploaded: https://youtu.be/VoQGv_5c8Oc  (public, state uploaded)
+```
+
+Both confirmed by YouTube itself, with no credential in the path:
+
+```text
+5icM9D32ssE -> 'I assumed that letting someone in would always leave me empty' | Chinedu Jephtah
+VoQGv_5c8Oc -> 'Forgive them fast when they make a small mistake'            | Brown Cinema
+```
+
+Both renders cleared the 50 s cap (37.9 s and 35.5 s). The Gemini ladder earned its keep on this run: one TTS
+key returned `HTTP 429` and was cooled down and skipped, and the jephter script model returned `HTTP 0`
+(connection dropped), so the next model in the ladder wrote the script.
+
+### The scheduled task had never actually run on schedule
+
+`Get-ScheduledTaskInfo` reported **`NumberOfMissedRuns: 7`** while this workstation was in continuous use. The
+task was registered with Task Scheduler's defaults, and the default that matters is
+**`DisallowStartIfOnBatteries = True`** — on a laptop, the pass is simply skipped, and nothing is written
+anywhere to say so. `LastRunTime` was the 13:44 pass that gated for want of a token; every wake-up after that
+was dropped. This is the exact "absence produces nothing" failure AGENTS.md §8 warns about: the log looked
+clean because there was no log.
+
+Re-registered with three changes, each verified after the fact:
+
+| Was | Now | Why |
+| :--- | :--- | :--- |
+| `DisallowStartIfOnBatteries True` / `StopIfGoingOnBatteries True` | both `False` | a laptop is not always on mains; the default silently skips the run |
+| `python … --once --privacy unlisted` | `scripts\x_daily.cmd` → `--once --privacy public`, `>> out\scheduler.log 2>&1` | real posting, and a failed run now leaves evidence |
+| (unchanged) `StartWhenAvailable` | kept | a run missed to sleep fires on wake instead of vanishing |
+
+```text
+Register-ScheduledTask ... -Force        # action x_daily.cmd, PT15M repetition, ExecutionTimeLimit PT2H
+Get-ScheduledTask  'X daily publish' ->  DisallowStartIfOnBatteries : False
+                                         StopIfGoingOnBatteries    : False
+                                         StartWhenAvailable        : True
+Start-ScheduledTask 'X daily publish'    # a real pass, not a probe
+Get-ScheduledTaskInfo -> LastTaskResult : 0     NextRunTime : 15:59
+
+out\scheduler.log:
+=== jephter · 2026-11-01 15:45 Africa/Lagos ===
+  today complete
+=== emmanuel · 2026-11-01 15:45 Africa/Lagos ===
+  today complete
+```
+
+"today complete" on both is the correct answer at 15:45 — two posts per channel already, and the ledger stops
+any duplicate. It also proves the whole chain end to end for the first time: Task Scheduler → `.cmd` → the
+scheduler → the ledger → the log.
+
+Today's shape, per channel: one unlisted connectivity proof (10:05 / 10:34 slot) plus one public post (17:00 /
+17:37 slot, published early by hand). Two videos, one day, no duplicates.
+
+**Left open:** the emmanuel channel's own name is still **Brown Cinema**, unflagged by the owner across two
+asks — it is what `steadfast7878@gmail.com` reports, and both posts landed there. The `.cmd` uses `python` from
+PATH; if the task ever fails with a bare "not recognised", that is the line to make explicit. ForChi's
+`d5b3981` is still local. Nothing watches `out\scheduler.log` yet — an L2 watchdog plus the L3 email (AGENTS.md
+§8) is the next reliability rung, since a silent task is what just cost us seven passes.
+
+---
+
 ## 2026-11-01 (first real post: jephter is live, and the granted scope is the only gate that matters)
 
 **Plane(s):** this folder only. One `videos.insert` to jephter; no host touched.

@@ -202,17 +202,41 @@ publish, because six builds once succeeded and every publish then failed.
 ## Scheduling — two ways, pick one
 
 **A. Windows Task Scheduler** (simplest: the clip libraries and `out/` live on this workstation). Trigger
-the scheduler rather than `x_publish`, so production and posting both happen on time:
+the scheduler rather than `x_publish`, so production and posting both happen on time.
+
+**Do not use `Register-ScheduledTask` with default settings.** A new task inherits
+`DisallowStartIfOnBatteries = True` and `StopIfGoingOnBatteries = True`, and on a laptop that means the pass
+is **skipped in silence** — no error, no log line, nothing to find. On 2026-11-01 this cost seven consecutive
+wake-ups while the machine was in continuous use (`NumberOfMissedRuns: 7`), and it was only visible because
+that counter was checked. Point the task at `scripts\x_daily.cmd`, which redirects the pass into
+`out\scheduler.log`, so a failure leaves evidence instead of nothing:
 
 ```powershell
-$action  = New-ScheduledTaskAction -Execute 'python' `
-  -Argument 'C:\Users\hp\Downloads\X\scripts\x_scheduler.py --once --privacy public' `
-  -WorkingDirectory 'C:\Users\hp\Downloads\X'
-$trigger = New-ScheduledTaskTrigger -Once -At (Get-Date).Date.AddMinutes(5) `
-  -RepetitionInterval (New-TimeSpan -Minutes 15)
-Register-ScheduledTask -TaskName 'X scheduler' -Action $action -Trigger $trigger `
-  -Description 'Produces at 07:00/14:00 and posts at 10:00/17:00 with per-channel jitter'
+Register-ScheduledTask -TaskName 'X daily publish' -Force `
+  -Action (New-ScheduledTaskAction -Execute 'C:\Users\hp\Downloads\X\scripts\x_daily.cmd' `
+                                   -WorkingDirectory 'C:\Users\hp\Downloads\X') `
+  -Trigger (New-ScheduledTaskTrigger -Once -At (Get-Date).Date.AddHours(13).AddMinutes(29) `
+                                     -RepetitionInterval (New-TimeSpan -Minutes 15)) `
+  -Settings (New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries `
+                                          -StartWhenAvailable -MultipleInstances IgnoreNew `
+                                          -ExecutionTimeLimit (New-TimeSpan -Hours 2))
 ```
+
+Note the parameter names: the *settings* flags are positive (`-AllowStartIfOnBatteries`,
+`-DontStopIfGoingOnBatteries`); `-DisallowStartIfOnBatteries` does not exist on the cmdlet even though it is
+the name of the property it sets. `-StartWhenAvailable` is what makes a run missed to sleep fire on wake
+instead of vanishing.
+
+Verify a registration by **running it**, not by reading it back:
+
+```powershell
+Start-ScheduledTask 'X daily publish'
+Get-ScheduledTaskInfo 'X daily publish' | Select-Object LastTaskResult, NextRunTime
+Get-Content out\scheduler.log | Select-Object -Last 6     # must show a dated pass, not an empty file
+```
+
+An empty log after `Start-ScheduledTask` means the action never started — check `LastTaskResult` and whether
+`python` is on the task's PATH.
 
 Every 15 minutes, `--once` does nothing until a slot is due. That is what makes a missed trigger
 self-healing rather than a hole in the schedule. `--daemon` is the alternative if a task that never exits is

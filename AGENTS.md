@@ -370,6 +370,7 @@ waterfall as ForChi (a key that is refused or out of quota is demoted, and the n
 | `scripts/youtube_upload.py` | resumable upload, ledger-guarded, private by default | `python scripts\youtube_upload.py --workflow jephter --check` |
 | `scripts/x_publish.py` | one-shot publish of what exists: render if missing, upload once, never twice | `python scripts\x_publish.py --workflow both` |
 | `scripts/x_scheduler.py` | the daily schedule: produce 07:00/14:00, post 10:00/17:00 with per-channel jitter, 2/day each | `python scripts\x_scheduler.py --verify` |
+| `scripts/x_daily.cmd` | what Task Scheduler actually runs: one `--once` pass, output appended to `out\scheduler.log` | `Get-Content out\scheduler.log -Tail 10` |
 | `config/songs/<wf>.json` | the measured song manifest | same command |
 | `scripts/gemini_keys.py` | key split, rotation, model ladder, TTS, validation | `python scripts\gemini_keys.py --audit` |
 | `scripts/x_media.py` | label clips and songs; `--vision` adds subject/baked-text | `python scripts\x_media.py --label jephter` |
@@ -425,7 +426,10 @@ rest. If that ever stops being true, the page text has to change in the same com
 
 - A **domain → `169.58.212.7` → TLS** for the privacy/terms pages. Until then the pages answer on
   `http://169.58.212.7/…`, which is enough to review but not enough for Google verification.
-- **The uploader.** `youtube_auth.py` obtains the credential; nothing calls `videos.insert` yet.
+- **Watching the scheduled run.** The uploader and the schedule both work now — two public posts on
+  2026-11-01 — but nothing reads `out\scheduler.log`, so a run that simply stops happening is still silent.
+  That is exactly how seven passes were lost to `DisallowStartIfOnBatteries`. The L2 watchdog and the L3 email
+  from §8 are the next rung.
 - **Scheduling and the L1–L4 rungs** from §8: systemd supervision, a watchdog, an email on exhaustion, and an
   external heartbeat. Nothing runs unattended today.
 - **Voice cloning.** Both channels are on Gemini TTS today. A real clone per workflow (F5-TTS, as ForChi uses) needs
