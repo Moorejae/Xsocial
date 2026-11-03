@@ -33,6 +33,7 @@ Google project therefore share that 100, they do not get 100 each.
 from __future__ import annotations
 
 import argparse
+import contextlib
 import json
 import mimetypes
 import os
@@ -40,6 +41,7 @@ import sys
 import time
 import urllib.error
 import urllib.request
+import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -219,25 +221,104 @@ def channel_of(token: str) -> dict:
 # ledger — the claim that prevents a double post
 # --------------------------------------------------------------------------------------
 
-def load_ledger() -> dict:
+def load_ledger(path: Path | None = None) -> dict:
     try:
-        return json.loads(LEDGER.read_text(encoding="utf-8"))
+        return json.loads((path or LEDGER).read_text(encoding="utf-8"))
     except (FileNotFoundError, json.JSONDecodeError):
         return {"claims": {}, "published": []}
 
 
-def save_ledger(ledger: dict) -> None:
-    LEDGER.parent.mkdir(parents=True, exist_ok=True)
-    LEDGER.write_text(json.dumps(ledger, indent=2) + "\n", encoding="utf-8")
+def save_ledger(ledger: dict, path: Path | None = None) -> None:
+    """Replace the file in one step, so a reader never sees half a file and a crash keeps the old one."""
+    target = path or LEDGER
+    target.parent.mkdir(parents=True, exist_ok=True)
+    tmp = target.with_name(f"{target.name}.{os.getpid()}.tmp")
+    tmp.write_text(json.dumps(ledger, indent=2) + "\n", encoding="utf-8")
+    for attempt in range(20):          # Windows refuses the replace while another handle is open
+        try:
+            os.replace(tmp, target)
+            return
+        except PermissionError:
+            if attempt == 19:
+                tmp.unlink(missing_ok=True)
+                raise
+            time.sleep(0.02)
 
 
-def claim(ledger: dict, workflow: str, file_hash: str) -> None:
+LOCK_TIMEOUT = 30.0
+
+
+@contextlib.contextmanager
+def ledger_lock(path: Path | None = None, timeout: float = LOCK_TIMEOUT):
+    """An exclusive lock file beside the ledger, portable to Windows.
+
+    Held only across a read-modify-write, never across an upload: a claim must be durable
+    before the side effect, not after it.
+    """
+    target = path or LEDGER
+    lock = target.with_name(target.name + ".lock")
+    target.parent.mkdir(parents=True, exist_ok=True)
+    deadline = time.monotonic() + timeout
+    token = f"{os.getpid()}-{uuid.uuid4().hex[:8]}"
+    fd = None
+    while fd is None:
+        try:
+            fd = os.open(lock, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+        except FileExistsError:
+            try:
+                if time.time() - lock.stat().st_mtime > timeout:   # left by a process that died
+                    lock.unlink(missing_ok=True)
+                    continue
+            except (FileNotFoundError, PermissionError):
+                continue
+            if time.monotonic() >= deadline:
+                raise TimeoutError(f"publish ledger is still locked after {timeout:.0f}s: {lock}")
+            time.sleep(0.05)
+    try:
+        os.write(fd, token.encode())
+        yield
+    finally:
+        # Only the owner removes the lock. Closing first and then unlink let a thread that had
+        # already taken the lock have its file deleted by the previous holder, so two writers ran.
+        try:
+            ours = lock.read_text(encoding="utf-8") == token
+        except OSError:
+            ours = False
+        os.close(fd)
+        if ours:
+            try:
+                lock.unlink(missing_ok=True)
+            except OSError:
+                pass
+
+
+def mutate_ledger(fn, path: Path | None = None):
+    """Read-modify-write under the lock, from disk — not from a copy that may be minutes old.
+
+    Two runs (a scheduled pass and a hand-run, or two passes) each loaded the file before the
+    other wrote it. Saving that stale copy back erased the other run's claim and its published
+    entry, which is how the same bytes can be uploaded twice.
+    """
+    with ledger_lock(path):
+        ledger = load_ledger(path)
+        result = fn(ledger)
+        save_ledger(ledger, path)
+        return result
+
+
+def claim(ledger: dict | None, workflow: str, file_hash: str, path: Path | None = None) -> None:
     """Write the claim and flush it BEFORE the upload starts."""
-    ledger.setdefault("claims", {})[f"{workflow}:{file_hash}"] = {
-        "at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
-        "status": "claimed",
-    }
-    save_ledger(ledger)
+    key = f"{workflow}:{file_hash}"
+
+    def apply(data: dict) -> None:
+        data.setdefault("claims", {})[key] = {
+            "at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+            "status": "claimed",
+        }
+
+    mutate_ledger(apply, path)
+    if ledger is not None:
+        ledger.update(load_ledger(path))
 
 
 def already_done(ledger: dict, workflow: str, file_hash: str) -> dict | None:
@@ -394,8 +475,9 @@ def selftest() -> int:
         print(f"    hash stable: {h1}")
 
         ledger = {"claims": {}, "published": []}
+        scratch = Path(d) / "ledger.json"
         assert already_done(ledger, "jephter", h1) is None
-        claim(ledger, "jephter", h1)
+        claim(ledger, "jephter", h1, scratch)
         assert already_done(ledger, "jephter", h1) is not None
         print("    double-post guard: claim blocks a second upload of the same file")
 
@@ -497,20 +579,27 @@ def main() -> int:
     if channel_id:
         print(f"  posted to: {channel_name} ({channel_id})")
 
-    ledger["claims"][f"{a.workflow}:{digest}"]["status"] = "uploaded"
-    ledger["claims"][f"{a.workflow}:{digest}"]["video_id"] = vid
-    ledger.setdefault("published_by_hash", {})[f"{a.workflow}:{digest}"] = {
-        "video_id": vid, "at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
-        "privacy": info["privacy"], "channel": channel_name, "channel_id": channel_id,
-        "status": "uploaded",
-    }
-    ledger.setdefault("published", []).append({
-        "workflow": a.workflow, "video_id": vid, "title": info["title"],
-        "privacy": info["privacy"], "file": str(path.relative_to(ROOT)) if path.is_relative_to(ROOT) else str(path),
-        "seconds": round(time.time() - started, 1),
-        "at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
-    })
-    save_ledger(ledger)
+    key = f"{a.workflow}:{digest}"
+
+    def record(data: dict) -> None:
+        data.setdefault("claims", {}).setdefault(key, {"at": datetime.now(timezone.utc)
+                                                       .isoformat(timespec="seconds")})
+        data["claims"][key]["status"] = "uploaded"
+        data["claims"][key]["video_id"] = vid
+        data.setdefault("published_by_hash", {})[key] = {
+            "video_id": vid, "at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+            "privacy": info["privacy"], "channel": channel_name, "channel_id": channel_id,
+            "status": "uploaded",
+        }
+        data.setdefault("published", []).append({
+            "workflow": a.workflow, "video_id": vid, "title": info["title"],
+            "privacy": info["privacy"],
+            "file": str(path.relative_to(ROOT)) if path.is_relative_to(ROOT) else str(path),
+            "seconds": round(time.time() - started, 1),
+            "at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        })
+
+    mutate_ledger(record)
 
     print(f"  uploaded: https://youtu.be/{vid}  ({info['privacy']}, state {info['upload_status']})")
     return 0
