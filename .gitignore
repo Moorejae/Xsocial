@@ -68,3 +68,7 @@ media/
 # Render output: videos, reports, the TTS cache and the usage ledger. All regenerable.
 /out/
 
+# The VPS runs from a virtualenv inside the repo (/root/X/.venv). It is machine-local and large.
+.venv/
+__pycache__/
+
