@@ -80,6 +80,31 @@ def test_a_bracketed_number_range_is_rejected_but_a_real_sentence_is_not():
     assert xs.is_speech("I waited until 3 am, then I stopped waiting.") is True
 
 
+def test_the_word_index_the_prompt_uses_is_rejected():
+    """Seen on 2026-11-03 in emmanuel's 17:38 render: it was one dry run from becoming the title."""
+    polluted = "(15) moments (16) without (17) being (18) asked. (19)"
+    assert xs.is_speech(polluted) is False
+    assert xs.is_speech("Put (20) down (21) whatever (22) is (23) in (24) your hands.") is False
+    # A plain number in ordinary prose is still speech.
+    assert xs.is_speech("I counted 3 times before I stopped.") is True
+    assert xs.is_speech("She left the note on the table and never came back.") is True
+
+
+def test_clean_lines_drops_a_polluted_line_and_keeps_the_rest():
+    text = "\n".join([
+        "(15) moments (16) without (17) being (18) asked. (19)",
+        "Stay gentle when you are exhausted.",
+        "Choose them on the hard days because easy days require no real devotion.",
+        "Real love is measured by what you give when you have nothing to gain.",
+    ])
+    lines = xs.clean_lines(text, 4)
+    assert lines == [
+        "Stay gentle when you are exhausted.",
+        "Choose them on the hard days because easy days require no real devotion.",
+        "Real love is measured by what you give when you have nothing to gain.",
+    ], lines
+
+
 def test_the_title_skips_a_leaked_line_instead_of_shipping_it():
     meta = yt.metadata_for("jephter", {"lines": LEAKED.splitlines()})
     title = meta["snippet"]["title"]

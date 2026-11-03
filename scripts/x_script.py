@@ -159,6 +159,11 @@ def is_speech(s: str) -> bool:
         return False
     if re.search(r"\(?\b\d+\b\s*,\s*(?:max|min)\b", s, re.IGNORECASE):
         return False
+    if re.search(r"\(\d+\)", s):
+        # The word index from the prompt, copied into the line: "(15) moments (16) without (17)
+        # being (18) asked." It reached TTS and became a file name, so it is rejected whole rather
+        # than stripped -- the line usually starts mid-sentence, so nothing usable is left.
+        return False
     if _META_PREFIX.match(s):
         return False
     return True
