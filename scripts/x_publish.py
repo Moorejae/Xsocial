@@ -14,7 +14,7 @@ What it does, in order:
    `--render-missing` is given, it renders one (`x_render.py`, which writes into that same folder).
 3. **Has that file already been uploaded?** Checked by content hash, so a re-render with the same bytes
    is not re-posted and a *different* file is not mistaken for it.
-4. **Upload** via `youtube_upload.py` — resumable, claim-before-side-effect, private unless told.
+4. **Upload** via `youtube_upload.py` — resumable, claim-before-side-effect, **public** unless told.
 
 Nothing here runs on a timer by itself; §"Scheduling" in `skills/x-publishing/SKILL.md` shows the two
 ways to do that, and the run is idempotent so either works.

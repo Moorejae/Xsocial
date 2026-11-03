@@ -105,9 +105,34 @@ def parse_log_age_minutes(text: str, now: datetime) -> float | None:
     return (now - newest).total_seconds() / 60.0
 
 
+def mail_ready_from(merged: dict[str, str], to: str) -> tuple[bool, str]:
+    """Can this host actually send mail? Names only — never a value.
+
+    The reminder and the alert are the only ways this pipeline can tell anyone that it stopped, so a
+    host that cannot send is a silent failure wearing a passing watch. It happened: the VPS clone had
+    no `SMTP_*` at all — the laptop had been borrowing ForChi's `.env` — so day-4 reminders would
+    have been "not sent" on a machine with no other way to say so.
+    """
+    missing = [k for k in ("SMTP_HOST", "SMTP_USER", "SMTP_PASS") if not merged.get(k)]
+    if not to:
+        missing.append("a recipient (ALERT_EMAIL / EMAIL_TO / reminder_email)")
+    if missing:
+        return False, "missing " + ", ".join(missing)
+    return True, f"via {merged.get('SMTP_HOST')}:{merged.get('SMTP_PORT') or 587} to {to}"
+
+
+def mail_ready() -> tuple[bool, str]:
+    merged, to = mail_settings()
+    return mail_ready_from(merged, to)
+
+
 def check(now: datetime, max_age: float, deadline_hour: int) -> list[str]:
     """Every problem found, as one line each. An empty list means the run is healthy."""
     problems: list[str] = []
+
+    ok, detail = mail_ready()
+    if not ok:
+        problems.append(f"mail: cannot send alerts or reminders — {detail}")
 
     if not LOG.exists():
         problems.append(f"no scheduler log at {LOG.relative_to(ROOT)} — the timer may never have run")
@@ -358,6 +383,8 @@ def summarise(now: datetime, tokens: dict | None = None) -> str:
                      else "  scheduler: no pass in the log")
     except OSError:
         lines.append("  scheduler: no log")
+    ok, detail = mail_ready()
+    lines.append(f"  mail: {'ready ' + detail if ok else 'NOT CONFIGURED — ' + detail}")
     lines += ["", "This is the daily heartbeat. It is sent whether or not anything went wrong — its "
                   "absence means this workstation stopped running, which is the only failure a log "
                   "on the same machine cannot report."]
