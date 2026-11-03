@@ -12,7 +12,7 @@ laptop staying open is not a pipeline.
 | | Where |
 | :--- | :--- |
 | Code, config, docs | the repo — `C:\Users\hp\Downloads\X` here, `/root/X` there (a clone of `Moorejae/Xsocial`) |
-| Media (`jephtah/`, `emmanuel/`) | **VPS only.** Deleted from the laptop after a byte-for-byte comparison |
+| Media (`jephtah/`, `emmanuel/`) | **both machines, one copy each, on purpose.** The laptop is where clips are added and labelled; the VPS renders from its own copy. `scripts/sync_media.py` keeps them in step |
 | Renders, logs, ledger, state | **VPS only**, under `/root/X/out/` |
 | Python | `/root/X/.venv` (cryptography, fonttools, numpy, pillow). ffmpeg is the distro's, 6.1.1 |
 | Schedule | `x-daily.timer` (15 min) → `scripts/x_daily.sh`; `x-watchdog.timer` (30 min) → `scripts/x_watchdog.sh` |
@@ -42,18 +42,38 @@ Done on 2026-11-03 in exactly that order: the Windows tasks were disabled *befor
 
 | Item | Why | How |
 | :--- | :--- | :--- |
-| `jephtah/`, `emmanuel/` | git-ignored media, 443 MB, 119 files | `scp -r` (see below) |
+| `jephtah/`, `emmanuel/` | git-ignored media, 443 MB, 119 files — **both machines keep a copy**: the laptop is where clips are added, the VPS is what renders | `python scripts\sync_media.py` (sends only what differs; `--verify` for a comparison) |
 | `Gemini api key` | git-ignored, by shape | `python scripts\vps.py --put "Gemini api key" "/root/X/Gemini api key"` |
 | `.env` | git-ignored | build it and `--put`; never echo it |
 | `secrets/master.key`, `secrets/youtube/*.json` | sealed tokens | `--put` each |
 | `out/publish_ledger.json`, `out/schedule_state.json`, `out/<wf>/usage.json`, `out/script_usage.json` | state, so the new host does not re-post | `--put` |
+
+**A clip that is not synced is a clip that never appears**, and the symptom looks like a broken picker rather
+than a missing file. So the order is: add clips → `label_emotions.py` → `sync_media.py` → the next timer pass
+picks them up (nothing needs restarting; the renderer reads from disk).
+
+```powershell
+python scripts\sync_media.py --dry-run       # the plan
+python scripts\sync_media.py                 # clips + manifests
+python scripts\sync_media.py --verify        # 0 = both sides identical, 1 = drift
+```
+
+Measured 2026-11-03 after copying back: `jephtah` 251,284,238 bytes / 65 files on both, `emmanuel` 213,002,168
+bytes / 54 files on both, `--verify -> identical`. Every labelled clip resolves on both sides (jephter 54/54,
+emmanuel 43/43).
+
+**Watch the line endings.** A manifest is CRLF here and LF there, so the *sizes* differ for identical content
+(26,710 vs 25,654 bytes for `jephter.json`). `sync_media.py` hashes the text with `\r\n` normalised for exactly
+this reason; a size comparison reported four unchanged files as drift on every run.
 
 **`GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` must be in the VPS `.env`.** On the laptop the credential chain
 falls back to `C:\Users\hp\forchi\.env`, which does not exist on the VPS, so `--check` and any consent link fail
 with *"no OAuth client found"*. Copy the two values from that file into `/root/X/.env` once. Posting still works
 without them (the sealed token carries its own client), but re-authorisation does not.
 
-## Media transfer: `scp -r`, not `tar | ssh`
+## Media transfer: `scp -r` for the first copy, `sync_media.py` for every one after
+
+The first copy is a bulk transfer; after that, use the script so only differences move.
 
 | Attempt | Result |
 | :--- | :--- |

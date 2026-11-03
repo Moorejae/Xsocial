@@ -85,7 +85,7 @@ workaround. The whole point of this file is that the two projects stay separate.
 | Server | `169.58.212.7` — Contabo, instance `vmi3701960` (`vmi3701960.contaboserver.net`) |
 | Access | SSH port 22 as `root` — see §5 |
 | Secrets | `.env` in this folder (git-ignored) **and a copy at `/root/X/.env`**, because the VPS runs it. Template in `.env.example`. |
-| Media libraries | **on the VPS only**, `/root/X/jephtah` and `/root/X/emmanuel`. They were deleted from this laptop on 2026-11-03 to free 1.36 GB |
+| Media libraries | **on both machines**, deliberately. `/root/X/jephtah` + `/root/X/emmanuel` is what renders; `C:\Users\hp\Downloads\X\jephtah` + `emmanuel` is the owner's working copy, where clips are added and labelled. Keep them in step with `python scripts\sync_media.py` |
 
 Verified on 2026-10-27: the instance exists and is reachable (`vmi3701960.contaboserver.net` resolves from the IP, TCP
 22 is open, TCP 443 is closed — so nothing is serving HTTPS yet).
@@ -105,6 +105,21 @@ So the whole pipeline moved to `169.58.212.7`, which is always on:
 | Schedule | `x-daily.timer` every 15 min → `scripts/x_daily.sh`; `x-watchdog.timer` every 30 min → `scripts/x_watchdog.sh` |
 | Logs | `/root/X/out/scheduler.log`, `out/watchdog.log`, `out/tests.log` |
 | State | `/root/X/out/publish_ledger.json`, `out/schedule_state.json` — **the VPS copy is the only truth** |
+| Media | on **both** machines. The VPS renders from its own copy; the laptop copy is where clips are added and labelled |
+
+**Adding clips is two steps, not one.** Drop them in `jephtah/` or `emmanuel/` here, label them
+(`python scripts\label_emotions.py --workflow <wf>`), then send them up — the renderer reads the VPS copy,
+so an un-synced clip is a clip that never appears in a video:
+
+```powershell
+python scripts\sync_media.py --dry-run      # what would be sent
+python scripts\sync_media.py                # send clips + the label manifests
+python scripts\sync_media.py --verify       # exit 1 if the two sides differ
+```
+
+`sync_media.py` compares name + size and transfers only the difference, and it compares the label manifests
+**normalised for line endings** — Windows checks out CRLF and Linux LF, so a byte-size comparison would push
+four unchanged files on every run.
 
 **The laptop's tasks are `Disabled` on purpose.** Two machines with two ledgers would double-post, and the
 ledger is per-machine. Do not re-enable `X daily publish` / `X watchdog` on Windows unless the VPS timers are
@@ -498,7 +513,8 @@ waterfall as ForChi (a key that is refused or out of quota is demoted, and the n
 | `scripts/bootstrap_vps.py` | ffmpeg + fonts on the VPS, then verify | `python scripts\bootstrap_vps.py` |
 | `scripts/youtube_auth.py` | loopback consent → refresh token → `secrets/youtube/<workflow>.json` | `python scripts\youtube_auth.py --workflow jephter` |
 | `scripts/build_site.py` / `deploy_site.py` | the privacy/terms pages Google requires | `python scripts\build_site.py` |
-| `jephtah/`, `emmanuel/` | the owner's clip and song libraries (git-ignored) | — |
+| `jephtah/`, `emmanuel/` | the owner's clip and song libraries — **a copy on the laptop and the copy the VPS renders from**; keep them in step with `scripts\sync_media.py` | `python scripts\sync_media.py --verify` |
+| `scripts/sync_media.py` | push new clips and the label manifests to the VPS; `--dry-run`, `--verify` | `python scripts\sync_media.py --dry-run` |
 | `out/<workflow>/` | renders, reports, voice cache, usage ledger (git-ignored) | — |
 
 Load `x-gemini-key-pool` before touching keys, `x-google-console-oauth` before touching a console,

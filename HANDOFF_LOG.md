@@ -4,7 +4,69 @@ Newest first. Every change gets an entry, with evidence. See [AGENTS.md](AGENTS.
 
 ---
 
-## 2026-11-03 (the pipeline moved to the VPS; the laptop's media and renders deleted)
+## 2026-11-03 (the clip libraries are a COPY on the laptop, not moved off the VPS)
+
+**Skills loaded:** `x-vps-deploy` (its own media table, which is what needed correcting), `x-video-pipeline`
+(where the labels come from and how the picker reads them).
+
+**Plane(s):** laptop `C:\Users\hp\Downloads\X` and `169.58.212.7:/root/X`. Nothing deleted from the VPS.
+
+**Asked:** "ooh for the video clips keep them in my laptop with their labels" then "i mean a copy of the clips,
+do not move them from the vps."
+
+### What changed
+
+Yesterday's migration removed the media from the laptop to free 1.36 GB. That was the wrong shape: the owner
+wants the libraries **here to work on** — adding and labelling clips is a local job — while the **VPS keeps its
+own copy to render from**. Two copies, deliberately, and never a move.
+
+| | Before | Now |
+| :--- | :--- | :--- |
+| laptop `jephtah/`, `emmanuel/` | deleted | restored, byte-identical |
+| VPS `/root/X/jephtah`, `emmanuel` | the only copy | **unchanged** — 65 / 54 files, 240 M / 204 M |
+| labels | only on the VPS + `config/scenes/` in the repo | `config/scenes/*.json` + `*-labels.md` are in the repo, so both machines carry them; every labelled clip resolves on both |
+
+**`scripts/sync_media.py` is new**, because two copies drift and an un-synced clip looks like a broken picker
+rather than a missing file. It compares name + size, transfers only the difference, sends the label manifests
+too, and reports files that exist only on the VPS without deleting them.
+
+| Flag | Use |
+| :--- | :--- |
+| `--dry-run` | the plan, nothing sent |
+| (none) | send what differs |
+| `--verify` | compare only; exit 1 on drift |
+| `--workflow jephter` | one library |
+
+### Verified
+
+```text
+# both sides hold the same bytes
+jephtah   251,284,238 bytes  65 files     (laptop and VPS)
+emmanuel  213,002,168 bytes  54 files     (laptop and VPS)
+97 mp4, 20 mp3, 1 apk, 1 ogg              (both)
+
+# the labels resolve against the media, on both
+jephter  54 clips, 54 labelled, 0 missing
+emmanuel 43 clips, 43 labelled, 0 missing
+
+python scripts\sync_media.py --verify  ->  identical   (exit 0)
+
+# and the tool actually transfers: a probe file was added locally, seen by --dry-run,
+# sent by a real run, then removed from both sides and re-verified identical.
+```
+
+**A bug in the first version of the script, found by running it.** It compared the manifests by byte size, and
+reported four unchanged files as drift on every run — because Windows checks them out CRLF and Linux LF
+(`jephter.json` is 26,710 bytes here and 25,654 there for identical content). Pushing those would have rewritten
+the VPS worktree with CRLF and left `git status` there permanently dirty. It now hashes the text with `\r\n`
+normalised.
+
+**Left open:** nothing. Adding clips is now: drop them in, `label_emotions.py`, `sync_media.py`, and the next
+timer pass uses them (no restart needed).
+
+---
+
+## 2026-11-03 (the pipeline moved to the VPS; the laptop's media and renders deleted — media later restored as a copy)
 
 **Skills loaded:** `x-watchdog` (its ladder table is what the systemd units replace), `x-vps-access` (the `ssh`
 on PATH trap and `vps.py` as the way in), `x-video-pipeline` (what a render needs, which is why `fonts/` and
@@ -35,6 +97,10 @@ lid, and it makes a business depend on one person's laptop staying open.
 | Windows tasks | **Disabled**, and they must stay that way while the VPS timers are live |
 
 Freed on the laptop: `jephtah` 239.6 MB + `emmanuel` 203.1 MB + `out/` 913.7 MB = **1,358 MB**.
+
+**Superseded the same day:** the owner asked for the clips to stay on the laptop as a *working copy* with their
+labels, so both libraries were copied back (see the entry above). The VPS copy was never moved or removed — the
+`out/` deletion stands, and so does everything else in this entry.
 
 ### The parts that were not obvious
 
@@ -82,9 +148,7 @@ Rendering works there — 17 MB mp4s, Jost captions, songs, the lot — which is
 silently on a headless box.
 
 **Left open:** the first post *from the VPS* is the 17:09 slot (jephter) and 17:38 (emmanuel); until then the
-upload path there is proven by `--check` (token refresh + API) but not by a full resumable PUT. The media now
-exists in **one place only** — if the VPS is lost, the clip libraries are gone; say the word and a compressed
-archive can be kept somewhere else.
+upload path there is proven by `--check` (token refresh + API) but not by a full resumable PUT.
 
 ---
 
