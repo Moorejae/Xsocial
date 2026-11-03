@@ -80,13 +80,41 @@ workaround. The whole point of this file is that the two projects stay separate.
 
 | | |
 | :--- | :--- |
-| Folder | `C:\Users\hp\Downloads\X` |
+| Code folder (here) | `C:\Users\hp\Downloads\X` — the repo, config, docs and scripts. **No media, no renders.** |
+| **Pipeline host** | **`169.58.212.7` → `/root/X`** — this is where the two channels now produce and post. systemd timers, not Windows Task Scheduler. See §2b |
 | Server | `169.58.212.7` — Contabo, instance `vmi3701960` (`vmi3701960.contaboserver.net`) |
 | Access | SSH port 22 as `root` — see §5 |
-| Secrets | `.env` in this folder, git-ignored. Template in `.env.example`. |
+| Secrets | `.env` in this folder (git-ignored) **and a copy at `/root/X/.env`**, because the VPS runs it. Template in `.env.example`. |
+| Media libraries | **on the VPS only**, `/root/X/jephtah` and `/root/X/emmanuel`. They were deleted from this laptop on 2026-11-03 to free 1.36 GB |
 
 Verified on 2026-10-27: the instance exists and is reachable (`vmi3701960.contaboserver.net` resolves from the IP, TCP
 22 is open, TCP 443 is closed — so nothing is serving HTTPS yet).
+
+### 2b. The pipeline runs on the VPS now, because a laptop sleeps
+
+Measured 2026-11-03: this laptop entered sleep at **01:50:40** and returned at **11:34:35**, so the 07:00 produce
+and both 10:xx posts did not exist. Nothing was broken; the machine was asleep. `-WakeToRun` helps a *sleeping*
+machine but not a closed lid, and it makes the business depend on one person's laptop staying awake.
+
+So the whole pipeline moved to `169.58.212.7`, which is always on:
+
+| | |
+| :--- | :--- |
+| Repo | `/root/X` — a clone of `Moorejae/Xsocial` |
+| Python | `/root/X/.venv` (cryptography, fonttools, numpy, pillow) |
+| Schedule | `x-daily.timer` every 15 min → `scripts/x_daily.sh`; `x-watchdog.timer` every 30 min → `scripts/x_watchdog.sh` |
+| Logs | `/root/X/out/scheduler.log`, `out/watchdog.log`, `out/tests.log` |
+| State | `/root/X/out/publish_ledger.json`, `out/schedule_state.json` — **the VPS copy is the only truth** |
+
+**The laptop's tasks are `Disabled` on purpose.** Two machines with two ledgers would double-post, and the
+ledger is per-machine. Do not re-enable `X daily publish` / `X watchdog` on Windows unless the VPS timers are
+disabled first.
+
+```powershell
+python scripts\vps.py "systemctl list-timers 'x-*' --no-pager"
+python scripts\vps.py "tail -20 /root/X/out/scheduler.log"
+python scripts\vps.py "systemctl start x-daily.service; journalctl -u x-daily -n 20 --no-pager --output=cat"
+```
 
 ---
 
@@ -167,6 +195,7 @@ Skills learned *in this project* go in `X\skills\<name>\SKILL.md`, same format a
 | **`x-voice-personas`** | A video that sounds wrong, fast, loud or not whispery; choosing a voice; keeping the two channels' voices distinct; TTS mime or 429 problems. |
 | **`x-test-video`** | The owner asks for a video, a test video, a sample or a re-render. It carries the delivery convention — `--deliver` puts the file and its report in `C:\Users\hp\Downloads`. |
 | **`x-forchi-bridge`** | Anything that reaches into `C:\Users\hp\forchi`: its voice backend, its writing formats, its emotion labels. Read before touching that project from here. |
+| **`x-vps-deploy`** | The pipeline runs on `169.58.212.7` now: redeploying after a code change, running a pass by hand, what git cannot carry, and the ordering that stops two machines double-posting. |
 | **`x-publishing`** | Publishing to YouTube: the one client with three channels, the consent step, the double-post ledger, quota, and how to schedule the daily run. |
 
 ---
@@ -310,17 +339,18 @@ observed arriving:
 | Rung | Implementation | Check it |
 | :--- | :--- | :--- |
 | L0 | 3 attempts per slot, 10 then 25 min, only where a retry is safe (the upload ledger claims first) | `x_scheduler.py --status` |
-| L1 | Task Scheduler, every 15 min, `-AllowStartIfOnBatteries -StartWhenAvailable` | `Get-ScheduledTaskInfo 'X daily publish'` |
+| L1 | **VPS systemd timers** — `x-daily.timer` every 15 min, `x-watchdog.timer` every 30 min, `Persistent=true` so a pass missed while the box was down runs on return | `python scripts\vps.py "systemctl list-timers 'x-*' --no-pager"` |
 | L2 | `scripts/x_watchdog.py` — log freshness, overdue slots, granted scope, nothing-posted-today | `python scripts\x_watchdog.py --dry-run` |
 | L3 | SMTP → `ALERT_EMAIL`, WHAT / WHY / TRIED / ACTION | `python scripts\x_watchdog.py --test-mail` |
 | L4 | daily heartbeat after 19:00; `out\.heartbeat` holds the last date it sent | `Get-Content out\.heartbeat` |
-| **L5 gate** | `scripts/x_daily.cmd` runs `tests\run_tests.py` first and **skips the pass** if any test fails, writing `TESTS FAILED` into the log the watchdog reads | `cmd /c scripts\x_daily.cmd` |
+| **L5 gate** | `scripts/x_daily.sh` runs `tests/run_tests.py` first and **skips the pass** if any test fails, writing `TESTS FAILED` into the log the watchdog reads | `python scripts\vps.py "systemctl start x-daily.service"` |
 
-**Why L5 exists.** On 2026-11-03 both channels stopped: `HTTP 503` was not in the transient set, so one fast pass
-over the model ladder raised `PoolExhausted` and the scheduler spent all three of a slot's attempts on a condition
-that clears itself in minutes. The fallback was written, and then *gated*: the tests run inside the workflow on
-every pass, because a fallback nobody exercises is a hope. `python tests\run_tests.py` is the whole suite — 28
-offline tests, no network, no credential.
+**Why the pipeline left the laptop.** On 2026-11-03 both channels stopped: `HTTP 503` was not in the transient
+set, so one fast pass over the model ladder raised `PoolExhausted` and the scheduler spent all three of a slot's
+attempts on a condition that clears itself in minutes. The same day, `Get-WinEvent` showed this laptop asleep
+from **01:50:40 to 11:34:35**, so the morning slots never existed at all. Both faults point the same way: an
+always-on host and a fallback that is exercised. The pipeline now runs on `169.58.212.7` under systemd, and the
+tests run inside the workflow on every pass, because a fallback nobody exercises is a hope.
 
 **The rule that came out of it: a transient condition must not consume a hard retry.** "The provider is busy" and
 "the pipeline is broken" need opposite responses. `x_render.py` exits **75** for the first and **1** for the
@@ -328,9 +358,10 @@ second; `x_scheduler.py` retries a 75 in 4 minutes without spending an attempt, 
 
 **Why the timer was invisible** — and the reason L2 exists: a Windows task inherits
 `DisallowStartIfOnBatteries = True`, so on a laptop it is skipped with no error, no log and no counter anyone
-reads. That happened here for **seven consecutive passes** before anyone noticed. A job whose output is not
-redirected to a file is untraceable for the same reason: `scripts/x_daily.cmd` and `scripts/x_watchdog.cmd` exist
-purely to redirect.
+reads. That happened here for **seven consecutive passes** before anyone noticed, and again on 2026-11-03 when the
+machine simply slept for ten hours. A job whose output is not redirected to a file is untraceable for the same
+reason: `scripts/x_daily.sh` and `scripts/x_watchdog.sh` exist purely to redirect. Both histories are why the
+schedule is on the VPS now (§2b) — a desktop-class failure mode removed rather than mitigated.
 
 ---
 
@@ -449,7 +480,9 @@ waterfall as ForChi (a key that is refused or out of quota is demoted, and the n
 | `scripts/youtube_upload.py` | resumable upload, ledger-guarded, private by default | `python scripts\youtube_upload.py --workflow jephter --check` |
 | `scripts/x_publish.py` | one-shot publish of what exists: render if missing, upload once, never twice | `python scripts\x_publish.py --workflow both` |
 | `scripts/x_scheduler.py` | the daily schedule: produce 07:00/14:00, post 10:00/17:00 with per-channel jitter, 2/day each | `python scripts\x_scheduler.py --verify` |
-| `scripts/x_daily.cmd` | what Task Scheduler actually runs: `tests\run_tests.py` first, then one `--once` pass; output appended to `out\scheduler.log` | `Get-Content out\scheduler.log -Tail 10` |
+| `scripts/x_daily.cmd` | **disabled legacy.** The Windows entry point, kept for reference only — the VPS runs `x_daily.sh` now | — |
+| `scripts/x_daily.sh` | what `x-daily.timer` runs on the VPS: tests first, then one `--once --privacy public` pass | `python scripts\vps.py "tail -20 /root/X/out/scheduler.log"` |
+| `scripts/x_watchdog.sh` | what `x-watchdog.timer` runs: the watchdog, appended to `out/watchdog.log` | `python scripts\vps.py "tail -20 /root/X/out/watchdog.log"` |
 | `tests/run_tests.py` | the offline test suite, no dependencies. Run on every scheduled pass; a failure blocks publishing | `python tests\run_tests.py` |
 | `scripts/x_watchdog.py` | L2/L3/L4: log freshness, overdue slots, credential scope, a WHAT/WHY/TRIED/ACTION email, and a daily heartbeat | `python scripts\x_watchdog.py --dry-run` |
 | `scripts/x_watchdog.cmd` | what the watchdog task runs, so a watchdog failure is also logged | `Get-Content out\watchdog.log -Tail 5` |

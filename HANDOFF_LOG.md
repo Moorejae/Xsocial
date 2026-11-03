@@ -4,6 +4,89 @@ Newest first. Every change gets an entry, with evidence. See [AGENTS.md](AGENTS.
 
 ---
 
+## 2026-11-03 (the pipeline moved to the VPS; the laptop's media and renders deleted)
+
+**Skills loaded:** `x-watchdog` (its ladder table is what the systemd units replace), `x-vps-access` (the `ssh`
+on PATH trap and `vps.py` as the way in), `x-video-pipeline` (what a render needs, which is why `fonts/` and
+`assets/` had to be present before the first pass could work). Reading them first is why the media, the key file
+and the sealed tokens were all listed before the first upload rather than discovered one failure at a time.
+
+**Plane(s):** `169.58.212.7:/root/X` (new host) and `C:\Users\hp\Downloads\X` (now code only).
+
+**Asked:** "move everything to the vps.." and "make sure to remove all of it and free up space for my laptop" and
+"make sure that its this vps in the .env".
+
+### Why it moved
+
+The question that started it — *are these running manually or on the VPS?* — had an uncomfortable answer: the VPS
+served four HTML pages and nothing else. Everything ran on this laptop under Windows Task Scheduler, which is
+exactly why the channels went down when it slept 01:50→11:34. `-WakeToRun` wakes a sleeping machine, not a closed
+lid, and it makes a business depend on one person's laptop staying open.
+
+### What is where now
+
+| | |
+| :--- | :--- |
+| `/root/X` | clone of `Moorejae/Xsocial`, `.venv` with cryptography / fonttools / numpy / pillow, ffmpeg 6.1.1 |
+| `/root/X/jephtah`, `/root/X/emmanuel` | the media — **the only copy**; the laptop's were deleted after a byte-for-byte match |
+| `x-daily.timer` | every 15 min → `scripts/x_daily.sh` (tests, then `--once --privacy public`), `Persistent=true` |
+| `x-watchdog.timer` | every 30 min → `scripts/x_watchdog.sh` → `out/watchdog.log` |
+| `C:\Users\hp\Downloads\X` | repo, config, docs, `secrets/`, `.env`. **No media, no `out/`** |
+| Windows tasks | **Disabled**, and they must stay that way while the VPS timers are live |
+
+Freed on the laptop: `jephtah` 239.6 MB + `emmanuel` 203.1 MB + `out/` 913.7 MB = **1,358 MB**.
+
+### The parts that were not obvious
+
+| Trap | What happened | What it cost |
+| :--- | :--- | :--- |
+| `tar -czf - dir \| ssh "tar -xzf -"` | `gzip: unexpected end of file` at 17 MB | the pipe closes early over this link; **use `scp -r`** |
+| `tar -czf media.tgz` locally | exit `-1073741819` (access violation), 17 MB written | Windows tar is unreliable on these filenames |
+| uploaded `x_daily.sh` | `Syntax error: Bad fd number` — **CRLF** in the shebang script | `sed -i 's/\r$//'` then `chmod +x`, every time |
+| `vps.py` timeout during a render | `PipeTimeout` on the client while the remote pass kept running | not a failure. Check `pgrep -af x_render`; use systemd for long work |
+| `--check` on the VPS | *"no OAuth client found"* | the laptop fell back to `C:\Users\hp\forchi\.env`; the VPS has no such file, so `GOOGLE_CLIENT_ID`/`_SECRET` were copied into `/root/X/.env` |
+| key audit on the VPS | *"key file not found"* | `Gemini api key` is git-ignored and had to be uploaded explicitly |
+
+Also: `out/schedule_state.json` came from Windows, so every `file` path was `out\jephther\x.mp4`. On Linux that is
+one long filename, so the paths were normalised to forward slashes on the VPS (16 of them).
+
+### Verified
+
+```text
+# before deleting anything, both sides identical
+jephtah  251,284,238 bytes / 65 files      (laptop and VPS)
+emmanuel 213,002,168 bytes / 54 files      (laptop and VPS)
+extensions: 97 mp4, 20 mp3, 1 apk, 1 ogg   (both)
+
+# dependencies
+deps ok 50.0.2 4.68.0     Python 3.12.3     ffmpeg 6.1.1
+
+# the suite runs on the VPS
+tests/run_tests.py -> 30 passed, 0 failed
+gemini_keys.py --audit -> 8/8 invariants hold
+youtube_upload.py --workflow jephter  --check -> granted scopes ... (token refresh works there)
+youtube_upload.py --workflow emmanuel --check -> granted scopes ...
+
+# the timers are live and doing work
+systemctl list-timers 'x-*' -> x-daily.timer next 14:45 (last 14:30), x-watchdog.timer next 15:00 (last 14:30)
+out/scheduler.log -> === jephter · 2026-11-03 14:30 Africa/Lagos · privacy=public ===
+                       next action: post at 17:09
+                     === emmanuel · 2026-11-03 14:30 Africa/Lagos · privacy=public ===
+                       produce 14:00: emmanuel_20261103-143147.mp4
+out/watchdog.log  ->   healthy
+ls out/jephter/*.mp4 -> jephter_20261103-142222.mp4        # a real render, made on the VPS
+```
+
+Rendering works there — 17 MB mp4s, Jost captions, songs, the lot — which is the part that could have failed
+silently on a headless box.
+
+**Left open:** the first post *from the VPS* is the 17:09 slot (jephter) and 17:38 (emmanuel); until then the
+upload path there is proven by `--check` (token refresh + API) but not by a full resumable PUT. The media now
+exists in **one place only** — if the VPS is lost, the clip libraries are gone; say the word and a compressed
+archive can be kept somewhere else.
+
+---
+
 ## 2026-11-03 (both workflows were down: an untransient 503, a slept laptop, and a title that was a leaked prompt)
 
 **Skills loaded:** `x-gemini-key-pool` (its own measured note already said 503 means "high demand"; that page is
