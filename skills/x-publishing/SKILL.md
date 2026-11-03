@@ -187,6 +187,26 @@ bytes have already been uploaded it refuses.
 | **Duration re-check before upload** | publishing is irreversible; a 62 s file must be caught by `x_publish` (which knows the 50 s cap) rather than by the owner afterwards |
 | **Resumable upload** | a 20 MB file over a flaky link fails half the time otherwise, and a failed plain upload can leave a half-processed video |
 
+| **The ledger write is a locked read-modify-write** | observed 2026-11-03: each run loaded the ledger, mutated its own copy and saved the whole file, so the later save erased the earlier run's claim — and the guard forgot a file it had already claimed. Every write now reloads from disk under a lock file and is applied with `os.replace`, so a reader never sees half a file |
+
+### Editing the ledger by hand
+
+Use the code path, never an editor:
+
+```powershell
+python -c "import sys;sys.path.insert(0,'scripts');import youtube_upload as yt;print(yt.mutate_ledger(lambda d: sorted(d['claims'])))"
+```
+
+A claim is written by `--dry-run` too, so a leftover `"status": "claimed"` with no `video_id` blocks the real
+upload with `rc=3` until it is removed — and only it:
+
+```powershell
+python -c "import sys;sys.path.insert(0,'scripts');import youtube_upload as yt;print(yt.mutate_ledger(lambda d: [d['claims'].pop(k) for k in [k for k,v in d['claims'].items() if v.get('status')=='claimed' and not v.get('video_id')]]))"
+```
+
+`--selftest` used to write its probe hash into the live ledger; it now uses a temp file. A claim whose hash is
+`a2e659dacb4691e8` is that 4 KB probe, not a video.
+
 ## Quota — the number that decides the schedule
 
 `videos.insert` has its **own bucket: 100 calls per project per day** (Google's quota calculator, revision

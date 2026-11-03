@@ -4,6 +4,93 @@ Newest first. Every change gets an entry, with evidence. See [AGENTS.md](AGENTS.
 
 ---
 
+## 2026-11-03 (the ledger can no longer forget a claim, and a script can no longer speak its own word index)
+
+**Skills loaded:** `x-publishing` (the ledger/double-post section — which is what made me open
+`out/publish_ledger.json` at all, and where the "claim before upload" property is written down), `x-vps-deploy`
+(the host now publishes, so every change here ends with a pull on `169.58.212.7`), `x-gemini-key-pool` (the 503/429
+waterfall, which is what got this render through a bad provider hour), `x-video-pipeline` (the 50 s cap and what a
+good render report looks like).
+
+**Plane(s):** this folder and `169.58.212.7:/root/X`.
+
+**Asked:** "stop pushing emmanuel's videos to private" — the privacy half was fixed and deployed in the entry
+below. While verifying it, two more faults surfaced, both caught before they reached a channel.
+
+### Fault 1 — the publish ledger could silently lose a claim
+
+`claim()` mutated a copy of the ledger loaded earlier in the run and saved the **whole** file back. Two runs
+(the timer's pass and a hand-run, or two passes) each saved their own stale copy, and the later save erased the
+earlier run's claim. That is the one write that stops the same bytes uploading twice.
+
+The stale entry I found was not a lost video: `jephter:a2e659dacb4691e8` is the hash of `--selftest`'s **4 KB
+probe file**, because `selftest()` called `claim()` against the live ledger. Proven by running the selftest and
+seeing the same digest print.
+
+| File | Change |
+| :--- | :--- |
+| `scripts/youtube_upload.py` | every ledger write is now a locked read-modify-write (`ledger_lock`, `mutate_ledger`) that **reloads from disk**; `save_ledger` writes a temp file and `os.replace`s it, so a reader never sees half a file; the lock is a create-only file, only its owner removes it, and an abandoned one is broken after 30 s; `--selftest` now uses a temp ledger |
+| `tests/test_ledger_safety.py` | **new**, 9 tests: a stale copy cannot erase another run's claim, 24 concurrent claims all survive (and 5 rounds of 16 for timing), `os.replace` leaves no temp file, a corrupt ledger reads as empty, an abandoned lock is broken, the lock is released on an exception, a lock is only removed by its owner, and the selftest does not touch the live ledger |
+
+The first version of the lock still failed the concurrency test with `PermissionError`: the holder closed the
+descriptor and *then* unlinked, so a run that had already taken the lock had its file deleted by the previous
+holder — two writers. The lock now carries a token and only the owner unlinks it; `os.replace` also retries,
+because Windows refuses it while another handle is open.
+
+### Fault 2 — emmanuel's next video would have spoken its word index
+
+`out/emmanuel/emmanuel_20261103-143147.json` read:
+
+```text
+"(15) moments (16) without (17) being (18) asked. (19)"
+"Put (20) down (21) whatever (22) is (23) in (24) your hands (25) when (26) they (27)…"
+```
+
+The numbering the prompt uses for the word budget came back inside the narration, so it went to TTS and would
+have become the **public title** of the 17:38 post — one `--dry-run` print is what caught it. Three of six
+phrases were polluted; the other renders on the host were clean, so this is intermittent, not chronic.
+
+| File | Change |
+| :--- | :--- |
+| `scripts/x_script.py` | `is_speech()` rejects a line containing `(n)`. Rejected whole, not stripped: the line starts mid-sentence, so there is nothing usable left |
+| `tests/test_script_leak_guard.py` | 2 new tests (12 in the file): the observed lines are rejected, `clean_lines` keeps the clean ones and drops the polluted one |
+| host | `emmanuel_20261103-143147.{mp4,json}` moved to `out/emmanuel/quarantine/` so no slot can post it, then a fresh render produced |
+
+### Verified
+
+```text
+python tests\run_tests.py            ->  47 passed, 0 failed          (local)
+.venv/bin/python tests/run_tests.py  ->  47 passed, 0 failed          (on 169.58.212.7)
+
+# the ledger write now reaches disk on the host, and the selftest no longer dirties it
+--selftest passed (nothing uploaded, no credential touched)
+mtime before=1793718094 after=1793718094  ->  UNCHANGED
+removed: ['jephter:a2e659dacb4691e8']            # the selftest probe claim
+
+# emmanuel's upload path really does claim before the side effect
+youtube_upload.py --workflow emmanuel --file …161120.mp4 --dry-run
+  privacy: public   size: 16230 KB   sha: 69fcd44d5cfa2a6b
+  --dry-run: claim written, nothing uploaded
+
+# the replacement render, measured
+out/emmanuel/emmanuel_20261103-161120.mp4  45.0 s  under_cap True  peak -2.3 dB
+polluted phrases: 0 of 8
+TITLE: Speak softly to them when your anger wants to shout
+jephter: newest unposted -> None
+emmanuel: newest unposted -> emmanuel_20261103-161120.mp4
+```
+
+The render itself rode the waterfall through a bad hour — `gemini-3.6-flash` 503, `3.5-flash` 429,
+`3.1-flash-lite` status 0, `3.8-flash` 503, "provider busy after pass 1/3", then TTS 429 on all nine keys in
+emmanuel's pool — and still produced a clean 45 s video. That is the L0 rung doing its job for the first time in
+production.
+
+**Left open:** the 17:38 emmanuel post is queued against the clean render, `--privacy public` on the unit's own
+command line (`scripts/x_daily.sh:18`). Worth one look at 17:40 to confirm it went out public. The quarantined
+render can be deleted once the owner is satisfied; it is 16 MB and posted nowhere.
+
+---
+
 ## 2026-11-03 (a video can no longer be published invisible by accident)
 
 **Skills loaded:** `x-publishing` (its own "Private by default" note, which was the mistake), `x-vps-deploy` (how
