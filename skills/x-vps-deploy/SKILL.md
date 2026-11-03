@@ -118,6 +118,18 @@ python scripts\vps.py "cd /root/X && /root/X/.venv/bin/python tests/run_tests.py
 
 `git pull` never touches the media, the `.env`, `secrets/` or `out/` — all ignored — so a pull is safe.
 
+**One trap:** if a file was uploaded with `--put` *before* it was committed, `git pull` refuses with
+`Aborting` / *"untracked working tree files would be overwritten by merge"*. That happened to `scripts/x_daily.sh`
+and `scripts/x_watchdog.sh` on 2026-11-03. Remove the uploaded copies first, then pull, then fix the modes:
+
+```bash
+cd /root/X
+rm -f scripts/x_daily.sh scripts/x_watchdog.sh
+git pull --ff-only
+sed -i 's/\r$//' scripts/x_daily.sh scripts/x_watchdog.sh
+chmod +x scripts/x_daily.sh scripts/x_watchdog.sh
+```
+
 ## Seeing the truth, not the intention
 
 | Question | Command |

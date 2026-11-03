@@ -46,6 +46,7 @@ Freed on the laptop: `jephtah` 239.6 MB + `emmanuel` 203.1 MB + `out/` 913.7 MB 
 | `vps.py` timeout during a render | `PipeTimeout` on the client while the remote pass kept running | not a failure. Check `pgrep -af x_render`; use systemd for long work |
 | `--check` on the VPS | *"no OAuth client found"* | the laptop fell back to `C:\Users\hp\forchi\.env`; the VPS has no such file, so `GOOGLE_CLIENT_ID`/`_SECRET` were copied into `/root/X/.env` |
 | key audit on the VPS | *"key file not found"* | `Gemini api key` is git-ignored and had to be uploaded explicitly |
+| `git pull` on the VPS | `Aborting` — *untracked files would be overwritten* | the two `.sh` files were uploaded before they were committed; `rm` them first, then pull, then `chmod +x` again |
 
 Also: `out/schedule_state.json` came from Windows, so every `file` path was `out\jephther\x.mp4`. On Linux that is
 one long filename, so the paths were normalised to forward slashes on the VPS (16 of them).
