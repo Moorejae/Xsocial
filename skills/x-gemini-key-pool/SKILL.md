@@ -119,6 +119,11 @@ Other models these keys can reach, worth knowing before the pipeline is built: `
   model is busy**, which is neither: see the transient table above, and never add a 5xx to the fatal set.
 - **`0` is a network failure**, distinct from an exhausted quota. One means "try again", the other means "add keys",
   and an alert that confuses them sends someone to the wrong problem.
+- **A cooldown is in-process and short: `60 s × attempt`.** It is not written to disk, so it dies with the
+  process. A storm of `429`s therefore costs minutes, not the day — on 2026-11-03 all nine of emmanuel's keys
+  returned `429` for six minutes and the render still finished. Do **not** read a cooldown as "this key is
+  finished"; only the daily quota is a ceiling, and only a `403` on a key that has not been used since midnight
+  is worth investigating.
 - **A key belongs to one Google project, and quota is per project, not per key.** Two workflows must never share a
   project even with different keys. This is why each channel gets its own Google console.
 - Rebalancing is `--split` plus a commit of `config/gemini-pools.json`. Never hand-edit key values.
