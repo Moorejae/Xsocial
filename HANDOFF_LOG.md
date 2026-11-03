@@ -62,9 +62,22 @@ OnCalendar=*:0/15 / *:0/30   Persistent=true   WantedBy=timers.target
 `Persistent=true` is what makes a reboot cost minutes rather than a day: a fire missed while the box was down is
 run on the next start. `Type=oneshot` means systemd will not start a second pass on top of a running one.
 
-**Left open:** the 17:38 emmanuel slot lands on the **17:45** pass (the :30 pass is before 17:38) and will post
-`emmanuel_20261103-161120.mp4` with `privacy=public`. Confirming it is one command: read `published` in
-`out/publish_ledger.json` — the entry records the privacy YouTube reported back, not the one we asked for.
+**Left open:** nothing — the 17:38 emmanuel slot fired on the 17:45 pass and is the proof this entry needed:
+
+```text
+emmanuel  EmJ7xqh7awM | privacy = public | 2026-11-03T16:45:38Z
+          "Speak softly to them when your anger wants to shout"
+oEmbed:   Speak softly to them when your anger wants to shout | Brown Cinema
+```
+
+The privacy in that line is the one **YouTube reported back**, not the one we asked for: `published[].privacy`
+is filled from the `videos.list` response in `confirm()`. oEmbed only answers for a video the public can see, so
+between the two this is a public post, from the VPS, with a title taken from the script. The title is also the
+answer to the second half of the question — it is a real spoken line, not `(15) moments (16) without…` and not
+the `Brown Cinema — a short about love` placeholder, which is what a `--dry-run` printed twenty minutes earlier
+and what would have gone out before the guard.
+
+The quarantined render is still in `out/emmanuel/quarantine/`; it was never posted.
 
 ---
 
