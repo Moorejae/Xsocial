@@ -202,10 +202,17 @@ def meaningful_error(stderr: str, limit: int = 200) -> str:
     return " | ".join(l.strip() for l in text.splitlines()[-3:] if l.strip())[:limit]
 
 
-def post(workflow: str, video: Path, privacy: str, dry_run: bool) -> int:
+def post(workflow: str, video: Path, privacy: str, dry_run: bool,
+         allow_private: bool = False) -> int:
     cmd = [sys.executable, str(ROOT / "scripts" / "youtube_upload.py"),
            "--workflow", workflow, "--file", str(video),
            "--report", str(video.with_suffix(".json")), "--privacy", privacy]
+    if privacy == "private":
+        # Forwarded only when the operator asked for it on this command line; youtube_upload.py
+        # refuses a private upload without it, which is what stops an invisible video.
+        if not allow_private:
+            raise RuntimeError("refusing to publish as private without --allow-private")
+        cmd.append("--allow-private")
     if dry_run:
         cmd.append("--dry-run")
     r = subprocess.run(cmd, text=True, errors="replace")
@@ -245,7 +252,12 @@ def credential_ready(workflow: str) -> tuple[bool, str]:
 
 
 def run_pass(workflows: tuple[str, ...], privacy: str, dry_run: bool, seed: int | None,
-             force: bool = False, no_produce: bool = False) -> int:
+             force: bool = False, no_produce: bool = False, allow_private: bool = False) -> int:
+    # Refused at the door. An invisible upload reports success, so it must not be reachable by a
+    # default, a typo or a copied command line.
+    if privacy == "private" and not allow_private:
+        raise SystemExit("refusing to publish as private without --allow-private. A private upload "
+                         "reports success and is invisible to the channel (2026-11-03).")
     cfg = load_config()
     state = load_state()
     now = datetime.now(ZoneInfo("Africa/Lagos"))
@@ -326,7 +338,7 @@ def run_pass(workflows: tuple[str, ...], privacy: str, dry_run: bool, seed: int 
                     cap = float(wf.get("video", {}).get("max_seconds", 50))
                     if dur > cap + 0.5:
                         raise RuntimeError(f"{video.name} is {dur:.1f}s, over the {cap:.0f}s cap")
-                    rc = post(name, video, privacy, dry_run)
+                    rc = post(name, video, privacy, dry_run, allow_private)
                     if rc == 3:      # ledger says these exact bytes are already published
                         entry["posted"] = True
                         entry["note"] = "already published (ledger)"
@@ -451,6 +463,9 @@ def main() -> int:
     # could see — measured 2026-11-03. Divergence between the manual and the scheduled command is a
     # trap, so there is now one default and it is printed on every pass.
     ap.add_argument("--privacy", default="public", choices=("private", "unlisted", "public"))
+    ap.add_argument("--allow-private", action="store_true",
+                    help="required with --privacy private: an invisible upload is a failure that "
+                         "looks like a success")
     ap.add_argument("--dry-run", action="store_true")
     ap.add_argument("--seed", type=int, default=None)
     ap.add_argument("--force", action="store_true", help="retry a slot that gave up")
@@ -466,13 +481,14 @@ def main() -> int:
 
     targets = WORKFLOWS if a.workflow == "both" else (a.workflow,)
     if a.once:
-        return run_pass(targets, a.privacy, a.dry_run, a.seed, a.force, a.no_produce)
+        return run_pass(targets, a.privacy, a.dry_run, a.seed, a.force, a.no_produce,
+                        a.allow_private)
 
     if a.daemon:
         print(f"scheduler awake; waking every {a.interval}s. Ctrl-C to stop.")
         while True:
             try:
-                run_pass(targets, a.privacy, a.dry_run, a.seed, a.force, a.no_produce)
+                run_pass(targets, a.privacy, a.dry_run, a.seed, a.force, a.no_produce, a.allow_private)
             except KeyboardInterrupt:
                 raise
             except Exception:

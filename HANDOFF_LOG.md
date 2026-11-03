@@ -4,6 +4,56 @@ Newest first. Every change gets an entry, with evidence. See [AGENTS.md](AGENTS.
 
 ---
 
+## 2026-11-03 (a video can no longer be published invisible by accident)
+
+**Skills loaded:** `x-publishing` (its own "Private by default" note, which was the mistake), `x-vps-deploy` (how
+to get the change onto the host that publishes).
+
+**Plane(s):** this folder and `169.58.212.7:/root/X`.
+
+**Asked:** "stop pushing emmanuel's videos to private."
+
+### The root cause, in one line
+
+`youtube_upload.py`, `x_scheduler.py` and `x_publish.py` each defaulted `--privacy` to **`private`**, on the
+theory that the dangerous mistake was an accidental publish. It was not. On 2026-11-03 an emmanuel video
+(`f0WJBpcMRVw`) went up private from a hand-run `x_scheduler.py --once`: the run printed success, the ledger
+recorded a publish, and the channel got nothing. A private upload is a **failure dressed as a success**, which is
+worse than an outright error.
+
+### Changed
+
+| File | Change |
+| :--- | :--- |
+| `youtube_upload.py` | `--privacy` default **public**; `metadata_for()` placeholder **public** so a caller that forgets publishes; new `--allow-private`, without which `--privacy private` is refused |
+| `x_scheduler.py` | `--privacy` default public; `run_pass()` refuses private at the door (before any render); `post()` forwards `--allow-private` only when the operator asked |
+| `x_publish.py` | same default, same refusal, moved to the **top** of `publish()` — the first attempt put it after the "already published" early return, so it could be skipped |
+| `tests/test_privacy_guard.py` | **new**, 6 tests: the metadata placeholder is public; both the scheduler and the publisher refuse private without the flag; the flag is forwarded only when asked; both signatures keep `allow_private`; the help text names both options |
+
+The rule now: **publishing is the default — that is what these channels exist to do — and hiding a video takes two
+deliberate acts on the same command line.**
+
+### Verified
+
+```text
+python tests\run_tests.py  ->  36 passed, 0 failed
+
+python scripts\x_scheduler.py --once --privacy private
+  refusing to publish as private without --allow-private. A private upload reports success and is
+  invisible to the channel (2026-11-03).                                  exit 1
+
+python scripts\x_scheduler.py --once --no-produce
+  === jephter · 2026-11-03 15:48 Africa/Lagos · privacy=public ===
+
+python scripts\youtube_upload.py --selftest
+  title='...'  privacy=public (public unless told)
+```
+
+**Left open:** the already-published `f0WJBpcMRVw` is still private — `videos.update` needs a scope we do not hold,
+so it is one click in YouTube Studio. Emmanuel's 17:38 slot has not posted yet and will go out public.
+
+---
+
 ## 2026-11-03 (the first post made by the VPS; the 17:09 slot brought forward)
 
 **Skills loaded:** `x-vps-deploy` (how to run a pass and where the ledger lives), `x-publishing` (the claim-before-upload ledger, which is why bringing a slot forward is safe).

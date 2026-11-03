@@ -182,7 +182,7 @@ bytes have already been uploaded it refuses.
 | :--- | :--- |
 | **Claim before upload** | `out/publish_ledger.json` is written and flushed before the request. A socket timeout *after* YouTube accepted the file would otherwise produce a second public video on retry |
 | **Hash, not filename** | the guard keys on `sha256(file)[:16]`. A re-render with identical bytes is the same video; a *different* file with the same name is not |
-| **Private by default** | the failure being protected against is an accidental publish, so `--privacy public` must be asked for |
+| **Public by default, `private` needs `--allow-private`** | the original rule was the wrong way round. On 2026-11-03 an emmanuel video went up private from a run that printed success: the channel got nothing and it took a day to notice. A private upload is a failure dressed as a success. Publishing is now the default — that is what these channels exist for — and hiding a video takes two deliberate acts on the same command line |
 | **`--check` uploads nothing** | proving a credential is `channels.list(mine=true)`: 1 quota unit, zero side effects |
 | **Duration re-check before upload** | publishing is irreversible; a 62 s file must be caught by `x_publish` (which knows the 50 s cap) rather than by the owner afterwards |
 | **Resumable upload** | a 20 MB file over a flaky link fails half the time otherwise, and a failed plain upload can leave a half-processed video |
@@ -290,6 +290,7 @@ but does not copy the libraries). Then a `*.timer` with `OnCalendar=*:0/15` call
 | `redirect_uri_mismatch` | the loopback URI is not registered on the client | add it in the console (§above) |
 | callback page says **Not authorised**, body `HTTPError: HTTP Error 403: Forbidden`, on *both* channels | `whoami()` called `channels.list` with a token that only had `youtube.upload` | keep `youtube.readonly` in `SCOPES`, restart `--serve`, re-open the fresh links. The token may already have been saved by `whoami_safe()` — run `--check` before redoing consent |
 | `invalid_grant` on refresh | consent revoked, or the app is in **Testing** and the 7-day refresh token expired | **Testing is the owner's deliberate choice** (2026-11-01), so this is routine: open the day-4/day-5 reminder mail, re-authorise, then `youtube_auth.py --workflow <wf> --from-url "<pasted url>"` |
+| A video is on the channel but **private** | it was uploaded with `--privacy private` — before 2026-11-03 that was the default, so a hand-run did it silently | check the run output: it prints `privacy=...` and the pass header carries `· privacy=public`. `videos.update` cannot fix it (needs `youtube.force-ssl`), so change it in YouTube Studio. The default is public now, and `private` needs `--allow-private` |
 | `REFUSING: this file is already uploaded` | the ledger has a claim for those bytes | correct — check `--status`; `--force` only if you know it did not land |
 | `no render for today` | nothing was built today | add `--render-missing`, or run `x_render.py` first |
 | `over the 50s cap — not publishing` | a manual render with a longer script | re-render; the cap comes from `config/workflows.json` |

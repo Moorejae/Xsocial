@@ -9,8 +9,11 @@ Why this shape
   second public video. So the claim is written and flushed first, and a retry reads it and refuses.
 * **`--check` never uploads.** It proves the refresh token works, prints the scopes Google actually
   granted, and reads the channel back if a read scope allows it — no insert, nothing published.
-* **Private by default.** `--privacy public` has to be asked for explicitly, because the failure this
-  protects against is an accidental publish, not an accidental private video.
+* **Public by default, and `private` needs `--allow-private`.** The original reasoning was backwards: it
+  assumed the dangerous mistake was an accidental publish. The mistake that actually happened (2026-11-03)
+  was an accidental **private** upload — the run reported success, the video was invisible, and the channel
+  lost a day. Both failures are now deliberate acts: publishing is the default because that is what these
+  two channels exist to do, and hiding a video takes a second explicit flag.
 
 Usage
 -----
@@ -264,6 +267,10 @@ def hash_file(path: Path) -> str:
 def metadata_for(workflow: str, script: dict | None, channel_name: str | None = None) -> dict:
     """Title, description and tags. The first line of the script becomes the hook.
 
+    `privacyStatus` here is a placeholder that `main()` overwrites with the requested privacy — it is
+    **public**, not private, so a caller that forgets to set it publishes rather than hides. A private
+    default is how an emmanuel video went up invisible on 2026-11-03 while the run reported success.
+
     The footer names the **real** channel when the caller knows it, because the workflow name and the
     YouTube channel's own name are not the same thing: the emmanuel workflow posts to a channel called
     "Brown Cinema", and a description signed "Emmanuel" on that channel is a mismatch a viewer sees.
@@ -301,7 +308,7 @@ def metadata_for(workflow: str, script: dict | None, channel_name: str | None = 
             "tags": ["love", "relationship", "romance", "couple", "shorts"],
             "categoryId": CATEGORY_PEOPLE_BLOGS,
         },
-        "status": {"privacyStatus": "private", "selfDeclaredMadeForKids": False},
+        "status": {"privacyStatus": "public", "selfDeclaredMadeForKids": False},
     }
 
 
@@ -372,7 +379,7 @@ def selftest() -> int:
     assert "I wanted it to stay." in meta["snippet"]["description"]
     assert meta["snippet"]["categoryId"] == CATEGORY_PEOPLE_BLOGS
     assert meta["status"]["selfDeclaredMadeForKids"] is False
-    print(f"    title={meta['snippet']['title']!r}  privacy={meta['status']['privacyStatus']} (private until told)")
+    print(f"    title={meta['snippet']['title']!r}  privacy={meta['status']['privacyStatus']} (public unless told)")
 
     long_title = {"lines": ["x " * 80]}
     t = metadata_for("emmanuel", long_title)["snippet"]["title"]
@@ -408,7 +415,12 @@ def main() -> int:
     ap.add_argument("--report", help="the render sidecar .json (for the script and title)")
     ap.add_argument("--check", action="store_true", help="prove the credential; uploads nothing")
     ap.add_argument("--dry-run", action="store_true", help="everything except the upload")
-    ap.add_argument("--privacy", default="private", choices=("private", "unlisted", "public"))
+    ap.add_argument("--privacy", default="public", choices=("private", "unlisted", "public"),
+                    help="public by default. `private` now also needs --allow-private, because a "
+                         "default that quietly uploaded invisible videos cost a day on 2026-11-03")
+    ap.add_argument("--allow-private", action="store_true",
+                    help="required to publish as private; nothing should reach a channel's audience "
+                         "by accident, and nothing should be invisible by accident either")
     ap.add_argument("--force", action="store_true", help="ignore an existing ledger claim")
     ap.add_argument("--selftest", action="store_true", help="no network, no credential")
     a = ap.parse_args()
@@ -417,6 +429,9 @@ def main() -> int:
         return selftest()
     if not a.workflow:
         ap.error("--workflow is required unless --selftest is given")
+    if a.privacy == "private" and not a.allow_private:
+        ap.error("--privacy private needs --allow-private. A private upload looks like a success and is "
+                 "invisible to the channel; on 2026-11-03 that is exactly how a video vanished.")
 
     cred = credentials(a.workflow)
     token = access_token(cred)

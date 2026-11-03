@@ -90,7 +90,13 @@ def render_one(workflow: str, seed: int | None) -> Path:
     return out
 
 
-def publish(workflow: str, privacy: str, dry_run: bool, force: bool) -> int:
+def publish(workflow: str, privacy: str, dry_run: bool, force: bool,
+            allow_private: bool = False) -> int:
+    # Before anything else: a private upload is refused at the door, not after a render and an
+    # "already published" check have already reported something reassuring.
+    if privacy == "private" and not allow_private:
+        raise SystemExit("refusing to publish as private without --allow-private. A private upload "
+                         "reports success and is invisible to the channel.")
     wf = load_config()[workflow]
 
     done = published_today(workflow)
@@ -114,6 +120,8 @@ def publish(workflow: str, privacy: str, dry_run: bool, force: bool) -> int:
            "--file", str(video),
            "--report", str(video.with_suffix(".json")),
            "--privacy", privacy]
+    if privacy == "private":
+        cmd.append("--allow-private")
     if dry_run:
         cmd.append("--dry-run")
     if force:
@@ -127,7 +135,9 @@ def main() -> int:
     xf.utf8_stdout()
     ap = argparse.ArgumentParser(description="Publish a channel's daily short, once")
     ap.add_argument("--workflow", default="both", choices=WORKFLOWS + ("both", "forchi"))
-    ap.add_argument("--privacy", default="private", choices=("private", "unlisted", "public"))
+    ap.add_argument("--privacy", default="public", choices=("private", "unlisted", "public"))
+    ap.add_argument("--allow-private", action="store_true",
+                    help="required with --privacy private; private is never a default")
     ap.add_argument("--render-missing", action="store_true", help="render if there is no video for today")
     ap.add_argument("--dry-run", action="store_true", help="check and claim, upload nothing")
     ap.add_argument("--force", action="store_true", help="ignore today's published record")
@@ -150,7 +160,7 @@ def main() -> int:
         if a.render_missing:
             if not any(is_today_render(p) for p in [newest_render(wf_name, load_config()[wf_name])] if p):
                 render_one(wf_name, a.seed)
-        codes.append(publish(wf_name, a.privacy, a.dry_run, a.force))
+        codes.append(publish(wf_name, a.privacy, a.dry_run, a.force, a.allow_private))
 
     bad = [c for c in codes if c not in (0,)]
     if bad:
