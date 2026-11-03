@@ -4,6 +4,70 @@ Newest first. Every change gets an entry, with evidence. See [AGENTS.md](AGENTS.
 
 ---
 
+## 2026-11-03 (the VPS could not send mail, and nothing was checking)
+
+**Skills loaded:** `x-watchdog` (the day-4/day-5 reminder contract and the L2–L4 rungs, which is where I
+looked first), `x-publishing` (the privacy default and where it is enforced), `x-vps-deploy` (the pull-and-verify
+routine, and the CRLF trap).
+
+**Plane(s):** this folder and `169.58.212.7:/root/X`.
+
+**Asked:** "will the next videos be sent to private again and the mistake with jephter's post repeat again… also
+the oauth, make sure its still sending to the email."
+
+### The one real fault: the publisher had no way to send mail
+
+`x_watchdog.mail_settings()` merges `SMTP_*`/`EMAIL_*` from **this project's `.env`** and then from
+**ForChi's `.env`**. On the laptop that worked because ForChi supplied them. The VPS has no ForChi, and the
+`.env` uploaded during the migration had **no `SMTP_*` at all** — so every alert, both day-4 reminders and every
+heartbeat would have failed with "SMTP settings are incomplete" on the one machine that has no other way to
+report it.
+
+It was already written down, twice, and unread: the watchdog's own `--selftest` asserts *"mail settings present:
+SMTP_HOST, SMTP_USER, SMTP_PASS"*, and nothing ran that selftest. `AGENTS.md` §8 lists `--test-mail` as the check
+for that rung.
+
+| File | Change |
+| :--- | :--- |
+| host `/root/X/.env` | six settings added from ForChi's `.env` — `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `EMAIL_FROM`, `EMAIL_TO` — **transferred, never printed**, mode `600` |
+| `x_watchdog.py` | new `mail_ready_from()` / `mail_ready()`; `check()` reports an unconfigured mail path as a problem; `summarise()` states the mail path in every pass and heartbeat |
+| `x_watchdog.sh` | runs `tests/run_tests.py` first and copies **only a failure** into `watchdog.log`, so a drifted watchdog cannot report "healthy" with stale rules without saying so |
+| `tests/test_watchdog_mail.py` | **new**, 7 tests: readiness needs the three settings *and* a recipient, the detail names a missing setting and never echoes a value, an unconfigured path shows up in `check()`, the summary states it, this host can send, and the watchdog's own selftest passes |
+| `tests/test_privacy_defaults.py` | **new**, 5 tests: every `--privacy` default is read from the source and must be `public`, every entry point carries `--allow-private`, the placeholder metadata is public, both `run_pass`/`publish` refuse a private upload without the flag, and `x_daily.sh` passes `--privacy public` on its own command line |
+| `.gitattributes` | `*.sh text eol=lf` — a Windows clone can no longer hand dash a CRLF script and get `Syntax error: Bad fd number` |
+| `x_publish.py` | docstring said "private unless told", which stopped being true in the entry below |
+
+### Verified
+
+```text
+# the host could not send before, and can now
+mail_settings() keys, before:  no SMTP_* at all
+.venv/bin/python scripts/x_watchdog.py --test-mail
+  mail: sent to aguswigad@gmail.com via smtp.gmail.com:587
+
+# what the reminders will do on the days that matter, pretending the clock
+day 3 (2026-11-03): nothing due
+day 4 (2026-11-04): jephter + emmanuel WOULD go to agumoorewe@gmail.com
+day 5 (2026-11-05): both again, worded as the final reminder
+day 6 (2026-11-06): nothing due
+tokens: obtained 2026-11-01, expire 2026-11-08
+
+python tests\run_tests.py              ->  59 passed, 0 failed   (local)
+.venv/bin/python tests/run_tests.py    ->  59 passed, 0 failed   (on the host, at e2e1458)
+sh scripts/x_watchdog.sh               ->  exit 0, "healthy", mail line present
+systemctl is-enabled x-daily.timer x-watchdog.timer  ->  enabled enabled
+OnCalendar=*:0/15 / *:0/30   Persistent=true   WantedBy=timers.target
+```
+
+`Persistent=true` is what makes a reboot cost minutes rather than a day: a fire missed while the box was down is
+run on the next start. `Type=oneshot` means systemd will not start a second pass on top of a running one.
+
+**Left open:** the 17:38 emmanuel slot lands on the **17:45** pass (the :30 pass is before 17:38) and will post
+`emmanuel_20261103-161120.mp4` with `privacy=public`. Confirming it is one command: read `published` in
+`out/publish_ledger.json` — the entry records the privacy YouTube reported back, not the one we asked for.
+
+---
+
 ## 2026-11-03 (the ledger can no longer forget a claim, and a script can no longer speak its own word index)
 
 **Skills loaded:** `x-publishing` (the ledger/double-post section — which is what made me open

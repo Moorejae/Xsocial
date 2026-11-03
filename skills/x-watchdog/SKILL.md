@@ -22,6 +22,14 @@ a pass happened recently, and it sends a **daily heartbeat** whose absence is it
 - Adding any unattended job: point it at a `.cmd` that redirects into a log, or its failure will be invisible.
 - A Windows Task Scheduler job that runs once and never again.
 
+**On a new host, check the mail path before anything else.** `python scripts\x_watchdog.py --test-mail` prints
+either `mail: sent to … via …:587` or the missing setting by name. The pipeline moved to the VPS on 2026-11-03
+with **no `SMTP_*` in `.env`** — on the laptop ForChi's `.env` had been supplying them — so every alert, both
+day-4 reminders and every heartbeat would have failed with "SMTP settings are incomplete" on the one machine
+that has no other way to say so. `mail_settings()` still merges ForChi's `SMTP_*`/`EMAIL_*` first, so a host
+without ForChi must carry its own. `check()` now reports an unconfigured mail path as a problem, and
+`summarise()` states the path in every heartbeat, because the failure is otherwise indistinguishable from quiet.
+
 ## The ladder, as built here
 
 | Rung | Where | Evidence |
