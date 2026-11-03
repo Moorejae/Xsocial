@@ -1,0 +1,6 @@
+# Shell scripts are read by dash on the VPS. A CRLF line ending makes it fail with
+# "Syntax error: Bad fd number", which names neither the file nor the cause — it cost time on
+# 2026-11-03. Pin the stored form and the checkout form so a Windows clone cannot produce one.
+*.sh   text eol=lf
+*.cmd  text eol=crlf
+*.ps1  text eol=crlf
