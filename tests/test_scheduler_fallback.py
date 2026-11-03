@@ -110,6 +110,49 @@ def test_a_transient_retry_is_sooner_than_the_hard_backoff():
     assert transient_due == datetime(2026, 11, 3, 11, 4)
 
 
+def test_produce_wraps_exit_75_as_transient():
+    """The wiring itself: a render that exits 75 must become TransientRender, not RuntimeError."""
+    import subprocess
+
+    class FakeRun:
+        returncode = 75
+        stdout = "  [emmanuel] wrote out\\emmanuel\\x.mp4"
+        stderr = "TRANSIENT: emmanuel: every model in the ladder failed; last: 503 (busy)"
+
+    original = sch.subprocess.run
+    sch.subprocess.run = lambda *a, **k: FakeRun()
+    try:
+        try:
+            sch.produce("emmanuel", {"output_dir": "out/emmanuel"}, {"index": 0}, None)
+        except sch.TransientRender as exc:
+            assert "503" in str(exc), f"the cause must survive, got {exc!r}"
+        except RuntimeError:
+            raise AssertionError("exit 75 must be transient, not a hard failure")
+        else:
+            raise AssertionError("produce() must raise on exit 75")
+    finally:
+        sch.subprocess.run = original
+
+
+def test_produce_keeps_a_real_failure_hard():
+    class FakeRun:
+        returncode = 1
+        stdout = ""
+        stderr = "Traceback (most recent call last):\n  File x, line 1\nValueError: bad shape\n"
+
+    original = sch.subprocess.run
+    sch.subprocess.run = lambda *a, **k: FakeRun()
+    try:
+        try:
+            sch.produce("emmanuel", {"output_dir": "out/emmanuel"}, {"index": 0}, None)
+        except sch.TransientRender:
+            raise AssertionError("exit 1 is a real failure and must not be retried as transient")
+        except RuntimeError as exc:
+            assert "ValueError" in str(exc), f"the cause should be in the message, got {exc}"
+    finally:
+        sch.subprocess.run = original
+
+
 def test_every_workflow_defines_the_transient_settings():
     cfg = json.loads((Path(__file__).resolve().parent.parent / "config" / "workflows.json")
                      .read_text(encoding="utf-8"))
