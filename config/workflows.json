@@ -89,7 +89,9 @@
       "retry_minutes": [
         10,
         25
-      ]
+      ],
+      "transient_retry_minutes": 4,
+      "max_transient_retries": 12
     }
   },
   "emmanuel": {
@@ -181,7 +183,9 @@
       "retry_minutes": [
         10,
         25
-      ]
+      ],
+      "transient_retry_minutes": 4,
+      "max_transient_retries": 12
     }
   }
 }

@@ -70,6 +70,38 @@ is deliberate: an accidental 10th key in one pool would look like a quota increa
 wall-clock budget. Each workflow **starts at a different rung** (`ladder_for`) so the two pipelines do not queue
 behind the same contended model.
 
+### A 503 is the provider being busy — it must never be treated like a bad request
+
+Measured 2026-11-03: **both channels went down for a day** because `503` was in neither the rotate set nor a
+transient set. It fell through to the plain else branch, so the ladder was walked once in about five seconds at
+a 1.5 s backoff and then raised `PoolExhausted` — which failed the render, spent all three of the slot's
+attempts, and left the day empty. Nothing was wrong with the keys, the scripts or the videos.
+
+| Status | Meaning | What `generate()` does now |
+| :--- | :--- | :--- |
+| `403`, `429` | this **key** is out of quota / refused | key on cooldown, next key, next rung |
+| `500`, `502`, `503`, `504` | the **model** is busy | key untouched, long backoff (`transient_delay` 8 s, doubling), then **the whole ladder again** |
+| `400`, `404` | the **request** is wrong | `GeminiError` immediately, no retry |
+| `0` | network | retried, counted as transient |
+
+Three fields make a busy provider survivable, and all three must stay non-zero:
+
+| Field | Default | Why |
+| :--- | :--- | :--- |
+| `transient_delay` | 8 s | a 503 burst lasts minutes; 1.5 s retries inside it accomplish nothing |
+| `ladder_rounds` | 3 | walking the ladder once is not a fallback, it is a single attempt |
+| `round_pause` | 20 s, ×round | a pause before re-walking, so the spike can pass |
+
+`total_timeout` still bounds everything, so retrying harder never becomes hanging.
+
+**`PoolExhausted` now carries `transient: bool`** and `is_transient(exc)` is the public way to ask. That flag is
+what lets `x_render.py` exit **75** (`EX_TEMPFAIL`) and `x_scheduler.py` retry in 4 minutes *without spending one
+of the slot's three attempts*. A provider outage and a broken pipeline need opposite responses; conflating them is
+what cost the day.
+
+Tests: `python tests\run_tests.py gemini` — eight tests, all offline, that fake `_request`. They are executed by
+`scripts/x_daily.cmd` before every pass.
+
 Other models these keys can reach, worth knowing before the pipeline is built: `gemini-3.8-flash-tts` and
 `gemini-3.1-flash-tts-preview` (narration — see the voice work), `lyria-3.5` (music), `gemini-3.5-transcribe`.
 
@@ -83,7 +115,8 @@ Other models these keys can reach, worth knowing before the pipeline is built: `
 - **Never put a key in a Markdown file, a commit, a URL in a document, or a screenshot.** `.githooks/pre-commit`
   blocks the common shapes; it is a backstop, not permission.
 - **`429`/`403` = this key is out of quota**, so it goes on cooldown and the next key is used. **`400`/`404` = the
-  request is wrong**, so the pool is not burned retrying it — `GeminiError` is raised immediately.
+  request is wrong**, so the pool is not burned retrying it — `GeminiError` is raised immediately. **`5xx` = the
+  model is busy**, which is neither: see the transient table above, and never add a 5xx to the fatal set.
 - **`0` is a network failure**, distinct from an exhausted quota. One means "try again", the other means "add keys",
   and an alert that confuses them sends someone to the wrong problem.
 - **A key belongs to one Google project, and quota is per project, not per key.** Two workflows must never share a

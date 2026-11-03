@@ -30,6 +30,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import re
 import subprocess
 import sys
 import time
@@ -161,13 +162,44 @@ def produce(workflow: str, wf: dict, slot: dict, seed: int | None) -> Path:
     r = subprocess.run(cmd, capture_output=True, text=True, errors="replace")
     for line in (r.stdout or "").strip().splitlines()[-2:]:
         print(f"      {line}")
+    if r.returncode == 75:
+        # EX_TEMPFAIL: the provider was busy. Distinguished from a real failure so the caller can
+        # retry soon without spending one of the slot's three attempts.
+        raise TransientRender(meaningful_error(r.stderr) or "provider busy")
     if r.returncode != 0:
-        raise RuntimeError(f"render failed rc={r.returncode}: {(r.stderr or '')[-400:]}")
+        raise RuntimeError(f"render failed rc={r.returncode}: {meaningful_error(r.stderr)}")
     out_dir = ROOT / wf.get("output_dir", f"out/{workflow}")
     files = sorted(out_dir.glob("*.mp4"), key=lambda p: p.stat().st_mtime, reverse=True)
     if not files:
         raise RuntimeError("render reported success but produced no mp4")
     return files[0]
+
+
+class TransientRender(RuntimeError):
+    """A render that failed for a reason that will probably be gone in a few minutes."""
+
+
+def meaningful_error(stderr: str, limit: int = 200) -> str:
+    """The line worth reading, not the tail of a traceback.
+
+    The old version took `stderr[-400:]`, which for a Python traceback is the *last* frames — file
+    names and `line 321` — with the actual message already cut off. That is why the 2026-11-03 log
+    said `render failed rc=1: ... max_output_tokens=2048) File "...gemini_keys.py", line 321)` and
+    named nothing. Prefer an explicit TRANSIENT:/FAILED: marker, then the last exception line.
+    """
+    text = (stderr or "").strip()
+    if not text:
+        return "(no stderr)"
+    for line in reversed(text.splitlines()):
+        s = line.strip()
+        if s.startswith(("TRANSIENT:", "FAILED:")):
+            return s[:limit]
+    # `XxxError: message` / `SystemExit: message` — the last such line is the one that explains it.
+    for line in reversed(text.splitlines()):
+        s = line.strip()
+        if re.match(r"^[A-Za-z_][\w.]*(Error|Exception|Exit|Exhausted|Failure)\b", s) or s.startswith("SystemExit"):
+            return s[:limit]
+    return " | ".join(l.strip() for l in text.splitlines()[-3:] if l.strip())[:limit]
 
 
 def post(workflow: str, video: Path, privacy: str, dry_run: bool) -> int:
@@ -224,7 +256,8 @@ def run_pass(workflows: tuple[str, ...], privacy: str, dry_run: bool, seed: int 
         sched = schedule_of(wf)
         ws = state.setdefault(name, {})
         todays = slots_for(name, wf, now)
-        print(f"\n=== {name} · {now.strftime('%Y-%m-%d %H:%M')} {sched.get('timezone')} ===")
+        print(f"\n=== {name} · {now.strftime('%Y-%m-%d %H:%M')} {sched.get('timezone')} "
+              f"· privacy={privacy} ===")
 
         ready, why = credential_ready(name)
         if not ready:
@@ -247,9 +280,16 @@ def run_pass(workflows: tuple[str, ...], privacy: str, dry_run: bool, seed: int 
 
             retry = sched.get("retry_minutes", [10, 25])
             if attempts and "last_at" in entry:
-                wait = retry[min(attempts - 1, len(retry) - 1)]
-                due = datetime.fromisoformat(entry["last_at"]) + timedelta(minutes=wait)
-                if now < due:
+                # A transient failure gets a short, fixed re-try window instead of the 10/25-minute
+                # backoff: the provider is busy, not broken, and the slot is still salvageable.
+                transient_last = entry.get("transient_at")
+                if transient_last:
+                    wait = float(sched.get("transient_retry_minutes", 4))
+                    due = datetime.fromisoformat(transient_last) + timedelta(minutes=wait)
+                else:
+                    wait = retry[min(attempts - 1, len(retry) - 1)]
+                    due = datetime.fromisoformat(entry["last_at"]) + timedelta(minutes=wait)
+                if now < due and not force:
                     print(f"  {slot['kind']} {fmt(slot['at'])}: {attempts} attempt(s) done, "
                           f"retry at {due.strftime('%H:%M')}")
                     continue
@@ -299,6 +339,27 @@ def run_pass(workflows: tuple[str, ...], privacy: str, dry_run: bool, seed: int 
                     entry["posted_file"] = str(video.relative_to(ROOT))
                     print(f"  post {fmt(slot['at'])}: {video.name} -> {'claimed (dry run)' if dry_run else 'published'}")
                 entry.pop("error", None)
+                entry.pop("transient_at", None)
+                entry.pop("transient_count", 0)
+            except TransientRender as exc:
+                # The provider was busy. Retry soon and, crucially, do NOT spend one of the three
+                # attempts — otherwise a ten-minute 503 burst silently costs the whole day, which is
+                # exactly what happened on 2026-11-03. Bounded, so a permanently busy provider still
+                # surfaces instead of looping for ever.
+                budget = int(sched.get("max_transient_retries", 12))
+                n = int(entry.get("transient_count", 0)) + 1
+                entry["attempts"] = max(0, attempts)          # un-spend the attempt
+                entry["transient_count"] = n
+                entry["transient_at"] = now.isoformat(timespec="seconds")
+                entry["error"] = f"transient: {str(exc)[:180]}"
+                save_state(state)
+                if n > budget:
+                    problems += 1
+                    print(f"  {slot['kind']} {fmt(slot['at'])}: provider busy {n} times "
+                          f"(budget {budget}) — giving up: {str(exc)[:120]}")
+                else:
+                    print(f"  {slot['kind']} {fmt(slot['at'])}: provider busy ({n}/{budget}) — "
+                          f"retrying shortly, attempt not consumed")
             except Exception as exc:
                 entry["error"] = f"{type(exc).__name__}: {str(exc)[:200]}"
                 problems += 1
@@ -385,7 +446,11 @@ def main() -> int:
     ap.add_argument("--once", action="store_true", help="one pass")
     ap.add_argument("--daemon", action="store_true", help="loop until stopped")
     ap.add_argument("--workflow", default="both", choices=WORKFLOWS + ("both",))
-    ap.add_argument("--privacy", default="private", choices=("private", "unlisted", "public"))
+    # Default matches what the scheduled task runs (`x_daily.cmd` passes --privacy public). It used
+    # to be `private`, so a hand-run to catch up looked successful while uploading a video nobody
+    # could see — measured 2026-11-03. Divergence between the manual and the scheduled command is a
+    # trap, so there is now one default and it is printed on every pass.
+    ap.add_argument("--privacy", default="public", choices=("private", "unlisted", "public"))
     ap.add_argument("--dry-run", action="store_true")
     ap.add_argument("--seed", type=int, default=None)
     ap.add_argument("--force", action="store_true", help="retry a slot that gave up")

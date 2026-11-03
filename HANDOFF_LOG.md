@@ -4,6 +4,121 @@ Newest first. Every change gets an entry, with evidence. See [AGENTS.md](AGENTS.
 
 ---
 
+## 2026-11-03 (both workflows were down: an untransient 503, a slept laptop, and a title that was a leaked prompt)
+
+**Skills loaded:** `x-gemini-key-pool` (its own measured note already said 503 means "high demand"; that page is
+what made the missing `TRANSIENT_STATUSES` obvious), `x-watchdog` (which log to read and what a missing pass
+looks like), `x-video-pipeline` (its failure table). Read before touching anything, per AGENTS.md §0.
+
+**Plane(s):** this folder only. ForChi untouched, as instructed. Three uploads: one public for jephter, one
+private for emmanuel (see below), one refused.
+
+**Asked:** "the work flows are down... find, fix and make add a fallback to make sure it doesnt happen again..
+also make sure the fallback is tested and the tests are run in the workflow. do not touch forchi."
+
+### What was actually wrong — three separate causes, found by measuring
+
+**1. `HTTP 503` was not treated as transient.** `ROTATE_STATUSES` was `{403, 429}` and `FATAL_STATUSES`
+`{400, 404}`; a 503 fell through to the plain `else`. So a burst of `503 UNAVAILABLE` ("high demand") walked the
+whole four-model ladder in about **five seconds** at a 1.5 s backoff, raised `PoolExhausted`, and the scheduler
+spent **all three** of the slot's attempts on a condition that clears itself. Evidence from the live log:
+
+```text
+produce 07:00: gave up after 3 attempts (RuntimeError: render failed rc=1: ...
+gemini_keys.py", line 321)
+```
+
+**2. The laptop was asleep for ten hours.** `Get-WinEvent` System/42,107:
+
+```text
+11/3/2026 1:50:40 AM   42  The system is entering sleep.
+11/3/2026 11:34:35 AM   1  The system has returned from a low power state.
+```
+
+The 07:00 produce and the 10:14/10:38 posts did not exist because nothing could run. `-StartWhenAvailable` does
+not help here — it only fires *once the machine is already awake*.
+
+**3. The error message was the tail of a traceback**, `stderr[-400:]`, which for a Python traceback is the last
+frames — file names and line numbers — with the message already cut off. That is why the log named nothing for a
+day. Diagnosability is part of a fallback: a failure nobody can read is a failure nobody fixes.
+
+**4. Found while reading the channels: a published title was a leaked model instruction.** `pPpfLrRgOzU` on
+jephter is titled **`target 85, max 95)`**, because the script's first two lines were `target 85, max 95).` and
+`**Final Polish:**` — the model's housekeeping, spoken aloud and captioned. `clean_lines()` only dropped lines
+starting with `#` and one-word fragments.
+
+### Changed
+
+| File | Change |
+| :--- | :--- |
+| `scripts/gemini_keys.py` | **new** `TRANSIENT_STATUSES = {500, 502, 503, 504}`; `transient_delay` 8 s (doubling), `ladder_rounds` 3, `round_pause` 20 s ×round — a busy provider is survived instead of reported. A 5xx leaves the **key** alone (it is the model that is busy) |
+| `scripts/gemini_keys.py` | `generate_audio()` gets the same treatment — TTS is on the same provider and a 503 there also killed a render |
+| `scripts/gemini_keys.py` | `PoolExhausted(message, transient: bool)` + `is_transient(exc)`. Callers can now tell "busy" from "broken" |
+| `scripts/x_render.py` | **new** `EXIT_TRANSIENT = 75` (`EX_TEMPFAIL`); the CLI body moved to `run(a)` so `main()` can map a transient exhaustion to it |
+| `scripts/x_scheduler.py` | **new** `TransientRender` and `meaningful_error()`; a 75 does **not** spend an attempt, retries in `transient_retry_minutes` (4) and is bounded by `max_transient_retries` (12) |
+| `scripts/x_scheduler.py` | `--force` now also bypasses the retry *window*, not only the attempt cap — "retry a slot that gave up" should do what it says |
+| `scripts/x_scheduler.py` | `--privacy` default changed **private → public**, matching `x_daily.cmd`, and the pass header prints it |
+| `scripts/x_daily.cmd` | runs `tests\run_tests.py` first; on failure writes `TESTS FAILED - pass skipped` into `out\scheduler.log` and exits 1 |
+| `scripts/x_script.py` | **new** `is_speech()` + `_META_PREFIX`; `clean_lines()` rejects markdown, trailing colons, `N, max M` ranges and instruction prefixes |
+| `scripts/youtube_upload.py` | `metadata_for()` validates the hook, so a leaked line can never become the title |
+| `config/workflows.json` | `transient_retry_minutes: 4`, `max_transient_retries: 12` per workflow |
+| `tests/` | **new.** `run_tests.py` (no third-party dependency), `test_gemini_fallback.py` (8), `test_scheduler_fallback.py` (10), `test_script_leak_guard.py` (10) |
+| Task Scheduler | both tasks re-registered with **`-WakeToRun`**, so a sleeping machine is woken for the slot |
+| `skills/x-gemini-key-pool`, `x-watchdog`, `x-video-pipeline`, `AGENTS.md` §8/§12 | the transient table, the L5 test gate, the sleep finding, the leak guard |
+
+### Verified
+
+```text
+python tests\run_tests.py
+  28 passed, 0 failed
+
+# the gate really blocks a pass — a deliberately failing test was added, run, then removed:
+cmd /c scripts\x_daily.cmd   ->  exit 1
+out\scheduler.log:  === Tue 11/03/2026 12:18:09.19 TESTS FAILED - pass skipped, see out\tests.log ===
+
+# a real pass through the entry point, with the suite green:
+cmd /c scripts\x_daily.cmd   ->  exit 0
+  === jephter · 2026-11-03 12:22 Africa/Lagos · privacy=public ===
+  === emmanuel · 2026-11-03 12:22 Africa/Lagos · privacy=public ===
+
+# the task now wakes a sleeping machine:
+Get-ScheduledTask 'X daily publish' -> WakeToRun True, StartWhenAvailable True,
+                                       DisallowStartIfOnBatteries False
+Get-ScheduledTaskInfo -> LastTaskResult 0, NextRunTime 12:14 (live, not a future boundary)
+
+# the fixed pipeline produces again, past a burst of 429s on the way:
+python scripts\x_render.py --workflow emmanuel
+  [emmanuel] tts gemini-3.8-flash-tts ... HTTP 429 -> key on cooldown   (x3, rotated)
+  [emmanuel] wrote out\emmanuel\emmanuel_20261103-122615.mp4  41.8s  27839 KB
+```
+
+Live channel state, read back from the API rather than assumed:
+
+```text
+jephter (Chinedu Jephtah):
+   XV_WZp7TB2M  public   2026-11-03T10:51  I told myself that guarding my life was the only
+   pPpfLrRgOzU  public   2026-11-02T16:17  target 85, max 95)          <-- the leak, already published
+emmanuel (Brown Cinema):
+   f0WJBpcMRVw  private  2026-11-03T11:13  Choose their peace over your own need to be righ
+   KuWmY6RJY5g  public   2026-11-02T16:46  Let them change their mind without making them a
+```
+
+### Two things this left behind, stated plainly
+
+- **`f0WJBpcMRVw` is private.** It was uploaded by a hand-run `x_scheduler.py --once` while the CLI still
+  defaulted to `private`, so it "succeeded" invisibly. `videos.update` needs a scope we deliberately do not hold,
+  so it cannot be flipped from here — the owner can set it to Public in YouTube Studio in one click. The default
+  is fixed, and the header now prints `privacy=public` on every pass so the divergence cannot hide again.
+- **`pPpfLrRgOzU` keeps its nonsense title** for the same reason. Fixed forward; not retro-fixable without
+  `youtube.force-ssl`.
+
+**Left open:** emmanuel's fresh render (`emmanuel_20261103-122615.mp4`, 41.8 s) is produced and waiting; the
+17:38 slot publishes it publicly. The transient budget is 12 × 4 min ≈ 48 minutes, which covers a realistic 503
+spike but not a multi-hour outage — past that the slot is reported and the watchdog mails, which is the intended
+escalation.
+
+---
+
 ## 2026-11-01 (the cadence answer, and the mistake in the first version of it)
 
 **Skills loaded:** `x-watchdog` (the one-mail-per-channel decision recorded below), plus a read of ForChi's

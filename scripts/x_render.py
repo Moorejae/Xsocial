@@ -716,6 +716,9 @@ def deliver_to_downloads(report: dict, wf: dict) -> Path:
     return dst
 
 
+EXIT_TRANSIENT = 75      # EX_TEMPFAIL: the provider was busy; the caller should retry, not give up
+
+
 def main() -> int:
     xf.utf8_stdout()
     ap = argparse.ArgumentParser(description="Render one vertical short for one X workflow")
@@ -728,6 +731,20 @@ def main() -> int:
                     help="also copy the result to the Downloads folder with the report beside it")
     a = ap.parse_args()
 
+    try:
+        return run(a)
+    except gk.PoolExhausted as exc:
+        # A busy provider is not a broken pipeline. Exit 75 (EX_TEMPFAIL) so the scheduler retries
+        # shortly WITHOUT burning one of the slot's three attempts — the 2026-11-03 outage was three
+        # burned attempts on a run of HTTP 503s, then a day of silence.
+        if getattr(exc, "transient", False):
+            print(f"TRANSIENT: {exc}", file=sys.stderr)
+            return EXIT_TRANSIENT
+        print(f"FAILED: {exc}", file=sys.stderr)
+        return 1
+
+
+def run(a: argparse.Namespace) -> int:
     wf = load_workflow(a.workflow)
 
     if a.phrases_file:

@@ -131,6 +131,39 @@ def build_prompt(wf: dict, seed_topic: str | None, avoid: list[str], workflow: s
     return "\n".join(parts)
 
 
+# Markers of a model talking to itself rather than speaking to the listener. Measured 2026-11-02:
+# a render shipped with "target 85, max 95)." and "**Final Polish:**" as its first two spoken lines —
+# and the first of those became the video's public TITLE. Every guard below is a line that was seen
+# in a real script, not a guess.
+_META_PREFIX = re.compile(
+    r"^(?:final\s+polish|polish|target|max\s+words?|word\s+count|output\s+only|here\s+is|"
+    r"script|narration|note|instructions?|format|rules?|structure|length|constraints?)\b",
+    re.IGNORECASE,
+)
+
+
+def is_speech(s: str) -> bool:
+    """Could this line be said aloud, or is it the model's own housekeeping?
+
+    A narration line is speech. Markdown, a trailing colon, a bracketed number range, or an
+    instruction word at the start all mean the model leaked its prompt into the script — which the
+    TTS then reads out and the caption then displays.
+    """
+    if not s or not re.search(r"[A-Za-z]", s):
+        return False
+    if len(s.split()) < 2:
+        return False
+    if any(marker in s for marker in ("**", "__", "`", "##")):
+        return False
+    if s.endswith(":"):
+        return False
+    if re.search(r"\(?\b\d+\b\s*,\s*(?:max|min)\b", s, re.IGNORECASE):
+        return False
+    if _META_PREFIX.match(s):
+        return False
+    return True
+
+
 def clean_lines(text: str, want: int) -> list[str]:
     """Turn a model response into spoken sentences. Anything that is not speech is discarded."""
     lines = []
@@ -140,9 +173,7 @@ def clean_lines(text: str, want: int) -> list[str]:
         s = s.strip().strip('"').strip("'").strip()
         if not s or s.startswith("#"):
             continue
-        if not re.search(r"[A-Za-z]", s):
-            continue
-        if len(s.split()) < 2:                                  # a stray header, a one-word fragment
+        if not is_speech(s):
             continue
         lines.append(s)
     # If the model answered in one paragraph, split on sentence boundaries instead.

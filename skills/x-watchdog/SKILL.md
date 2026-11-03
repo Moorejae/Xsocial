@@ -26,17 +26,18 @@ a pass happened recently, and it sends a **daily heartbeat** whose absence is it
 
 | Rung | Where | Evidence |
 | :--- | :--- | :--- |
-| **L0 retry** | inside a slot, 3 attempts, 10 then 25 min | `config/workflows.json` → `max_attempts_per_slot`, `retry_minutes` |
-| **L1 supervise** | Windows Task Scheduler, every 15 min, `-StartWhenAvailable` | `Get-ScheduledTaskInfo` |
+| **L0 retry** | inside a slot, 3 attempts, 10 then 25 min — plus a **4-minute transient retry that spends no attempt** | `config/workflows.json` → `max_attempts_per_slot`, `retry_minutes`, `transient_retry_minutes`, `max_transient_retries` |
+| **L1 supervise** | Windows Task Scheduler, every 15 min, `-StartWhenAvailable` **and `-WakeToRun`** | `Get-ScheduledTaskInfo` |
 | **L2 detect** | `x_watchdog.py`: log freshness, overdue slots, credential scope, nothing-posted-today | `python scripts\x_watchdog.py --dry-run` |
 | **L3 escalate** | SMTP to `ALERT_EMAIL`, WHAT / WHY / TRIED / ACTION | `--test-mail`, sent and received |
 | **L4 dead-man** | daily heartbeat from `x_watchdog.py` (`--heartbeat-hour`, default 19) | `out\.heartbeat` holds the date it last sent |
+| **L5 gate** | `x_daily.cmd` runs `tests\run_tests.py` first and skips the pass on a failure | `cmd /c scripts\x_daily.cmd` |
 
-## What the four checks catch
+## What the checks catch
 
 | Check | Catches |
 | :--- | :--- |
-| newest `=== wf · date time tz ===` header in `out\scheduler.log` older than `--max-age` (45 min) | the timer stopped firing at all — the original failure |
+| newest `=== wf · date time tz [· privacy=…] ===` header in `out\scheduler.log` older than `--max-age` (45 min) | the timer stopped firing at all — the original failure. The pattern **tolerates a suffix**: a stricter one silently matched nothing when the header gained `· privacy=public` |
 | a posting hour passed by 45 min with fewer posts than slots | a render that keeps failing, or a credential that gated every attempt |
 | `youtube_upload.granted_scopes(wf)` lacks `youtube.upload` | a re-consent that came back without the YouTube permission — it looks healthy and cannot post |
 | after `--deadline-hour` (18) nothing posted today | a whole day lost quietly |
@@ -209,6 +210,8 @@ python scripts\x_watchdog.py --max-age 90 --deadline-hour 20   # a quiet night, 
 | Symptom | Cause | Fix |
 | :--- | :--- | :--- |
 | task runs once, then never | `DisallowStartIfOnBatteries = True` (the default) skips it on a laptop, silently | `-AllowStartIfOnBatteries -DontStopIfGoingOnBatteries`, then verify by **running** it |
+| **nothing runs for hours, log just stops** | the machine was **asleep**. Measured 2026-11-03: sleep 01:50:40 → wake 11:34:35, so the 07:00 produce and both 10:xx posts simply did not exist | `-WakeToRun` on the task, so a sleeping machine is woken for the slot. `-StartWhenAvailable` alone does not help — it only fires once the machine is already awake. Confirm with `Get-WinEvent -FilterHashtable @{LogName='System'; Id=42,107}` |
+| a 30-minute slot disappears with `render failed rc=1` naming nothing | the old error was `stderr[-400:]`, the **tail** of a traceback, which never contains the message | `meaningful_error()` in `x_scheduler.py` extracts the `TRANSIENT:`/`FAILED:`/exception line. If a log still truncates, that function is the place |
 | `--dry-run` says healthy while nothing posts | the log is fresh because a pass ran and failed fast | read `out\scheduler.log`, not just its timestamp; `x_scheduler.py --status` names the failing slot |
 | a heartbeat arrives every pass | the marker write failed and the code retried | the marker is written only after `send()` reports success; a missing marker means "not sent", not "sent twice" |
 | two alerts for one incident | the watchdog alerts on every pass, by design | that is deliberate: a problem still open 30 minutes later is worth a second mail. Only the *heartbeat* is once a day |

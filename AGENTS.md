@@ -314,6 +314,17 @@ observed arriving:
 | L2 | `scripts/x_watchdog.py` — log freshness, overdue slots, granted scope, nothing-posted-today | `python scripts\x_watchdog.py --dry-run` |
 | L3 | SMTP → `ALERT_EMAIL`, WHAT / WHY / TRIED / ACTION | `python scripts\x_watchdog.py --test-mail` |
 | L4 | daily heartbeat after 19:00; `out\.heartbeat` holds the last date it sent | `Get-Content out\.heartbeat` |
+| **L5 gate** | `scripts/x_daily.cmd` runs `tests\run_tests.py` first and **skips the pass** if any test fails, writing `TESTS FAILED` into the log the watchdog reads | `cmd /c scripts\x_daily.cmd` |
+
+**Why L5 exists.** On 2026-11-03 both channels stopped: `HTTP 503` was not in the transient set, so one fast pass
+over the model ladder raised `PoolExhausted` and the scheduler spent all three of a slot's attempts on a condition
+that clears itself in minutes. The fallback was written, and then *gated*: the tests run inside the workflow on
+every pass, because a fallback nobody exercises is a hope. `python tests\run_tests.py` is the whole suite — 28
+offline tests, no network, no credential.
+
+**The rule that came out of it: a transient condition must not consume a hard retry.** "The provider is busy" and
+"the pipeline is broken" need opposite responses. `x_render.py` exits **75** for the first and **1** for the
+second; `x_scheduler.py` retries a 75 in 4 minutes without spending an attempt, and reports a 1 as a failure.
 
 **Why the timer was invisible** — and the reason L2 exists: a Windows task inherits
 `DisallowStartIfOnBatteries = True`, so on a laptop it is skipped with no error, no log and no counter anyone
@@ -438,7 +449,8 @@ waterfall as ForChi (a key that is refused or out of quota is demoted, and the n
 | `scripts/youtube_upload.py` | resumable upload, ledger-guarded, private by default | `python scripts\youtube_upload.py --workflow jephter --check` |
 | `scripts/x_publish.py` | one-shot publish of what exists: render if missing, upload once, never twice | `python scripts\x_publish.py --workflow both` |
 | `scripts/x_scheduler.py` | the daily schedule: produce 07:00/14:00, post 10:00/17:00 with per-channel jitter, 2/day each | `python scripts\x_scheduler.py --verify` |
-| `scripts/x_daily.cmd` | what Task Scheduler actually runs: one `--once` pass, output appended to `out\scheduler.log` | `Get-Content out\scheduler.log -Tail 10` |
+| `scripts/x_daily.cmd` | what Task Scheduler actually runs: `tests\run_tests.py` first, then one `--once` pass; output appended to `out\scheduler.log` | `Get-Content out\scheduler.log -Tail 10` |
+| `tests/run_tests.py` | the offline test suite, no dependencies. Run on every scheduled pass; a failure blocks publishing | `python tests\run_tests.py` |
 | `scripts/x_watchdog.py` | L2/L3/L4: log freshness, overdue slots, credential scope, a WHAT/WHY/TRIED/ACTION email, and a daily heartbeat | `python scripts\x_watchdog.py --dry-run` |
 | `scripts/x_watchdog.cmd` | what the watchdog task runs, so a watchdog failure is also logged | `Get-Content out\watchdog.log -Tail 5` |
 | `config/songs/<wf>.json` | the measured song manifest | same command |

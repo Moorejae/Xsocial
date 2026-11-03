@@ -187,11 +187,16 @@ is the replacement and is what runs here.
 | Whole song pool reads `energy: unknown` | `volumedetect` reports at INFO level and `-v error` suppresses it | `xf.levels()` never passes `-v error` |
 | `UnicodeEncodeError` mid-sweep | clip filenames are emoji; cp1252 console | `xf.utf8_stdout()` in every entry point |
 | Render stops with `PoolExhausted` | TTS/script quota genuinely spent | it is *supposed* to be loud. See `x-voice-personas` |
+| Render stops with `PoolExhausted` during a burst of `HTTP 503 (busy)` | **`503` was not in the transient set**, so one fast pass over the ladder raised it and the slot's attempts were spent — this cost both channels a day on 2026-11-03 | fixed in `gemini_keys.py`; see the transient table in `x-gemini-key-pool`. The render now exits **75** and the scheduler retries in 4 minutes without spending an attempt |
+| The script contains `**Final Polish:**` or `target 85, max 95).` | the model leaked its own instructions, and `clean_lines()` only dropped `#` headings and one-word fragments | `is_speech()` in `x_script.py` rejects markdown, trailing colons, `N, max M` ranges and instruction prefixes; `metadata_for()` validates the hook so a leak cannot become the **title** |
+| A published title is nonsense like `target 85, max 95)` | same leak, and the first script line becomes the title | same guard. It happened once, to `pPpfLrRgOzU` on 2026-11-02; `videos.update` cannot fix it without `youtube.force-ssl`, so it was fixed forward instead |
 | Video shorter than the narration | a phrase dropped but the audio kept | the renderer drops the line from **both** lists together (`phrases`, `wavs`, `durs`) |
 
 ## Verification
 
 ```powershell
+python tests\run_tests.py                       # 28 tests, offline, no network, no credential
+python scripts\gemini_keys.py --audit           # 8/8 key invariants, no network
 $j = Get-Content (Get-ChildItem out\jephter\*.json | Sort LastWriteTime -Desc | Select -First 1) -Raw | ConvertFrom-Json
 $j.duration_s, $j.under_cap, $j.cuts.Count, $j.song.offset
 

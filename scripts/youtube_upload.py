@@ -267,12 +267,25 @@ def metadata_for(workflow: str, script: dict | None, channel_name: str | None = 
     The footer names the **real** channel when the caller knows it, because the workflow name and the
     YouTube channel's own name are not the same thing: the emmanuel workflow posts to a channel called
     "Brown Cinema", and a description signed "Emmanuel" on that channel is a mismatch a viewer sees.
+
+    The hook is validated, not trusted. On 2026-11-02 a leaked model instruction (`target 85, max 95).`)
+    became the public title of a published video, so a line that is not speech is replaced instead of
+    being shipped.
     """
     wf = json.loads(CONFIG.read_text(encoding="utf-8")).get(workflow, {})
     wf = {k: v for k, v in wf.items() if not k.startswith("_")}
     channel = channel_name or wf.get("channel_name", workflow.title())
     lines = (script or {}).get("lines") or []
-    hook = lines[0].rstrip(".") if lines else ""
+    hook = ""
+    try:
+        import x_script as _xs
+        for cand in lines:
+            cand = str(cand).strip()
+            if cand and _xs.is_speech(cand):
+                hook = cand.rstrip(".")
+                break
+    except Exception:                                        # noqa: BLE001 - never block a publish
+        hook = (lines[0].rstrip(".") if lines else "")
     title = (hook[:92] + "…") if len(hook) > 92 else (hook or f"{channel} — a short about love")
     body = "\n".join(lines) if lines else ""
     description = (

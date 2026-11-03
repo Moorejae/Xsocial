@@ -64,6 +64,12 @@ WORKFLOWS = ("jephter", "emmanuel")
 
 # Statuses that mean "this key is out of quota / not allowed" -> rotate and cool down.
 ROTATE_STATUSES = {403, 429}
+# Statuses that mean "the model is busy, not broken" -> back off properly and retry, then walk the
+# ladder again after a pause. THIS SET WAS THE 2026-11-03 OUTAGE: 503 was not here, so a burst of
+# `UNAVAILABLE` ("high demand") walked the whole ladder in about five seconds at a 1.5 s backoff and
+# raised PoolExhausted, which failed the render and cost both channels a day. A 503 is the most
+# transient answer Google gives; it must never be treated like a bad request.
+TRANSIENT_STATUSES = {500, 502, 503, 504}
 # Statuses that mean "the request was bad" -> do not burn the whole pool on it.
 FATAL_STATUSES = {400, 404}
 
@@ -239,6 +245,12 @@ class GeminiPool:
     attempts_per_model: int = 2
     base_delay: float = 1.5
     cooldown_seconds: float = 60.0
+    # A 503 burst lasts minutes, not milliseconds, so one 1.5 s retry per model is not a fallback.
+    # These three fields are what make a busy provider survivable: a long backoff inside a model,
+    # then the whole ladder walked again, the pauses growing. `total_timeout` still bounds it.
+    transient_delay: float = 8.0
+    ladder_rounds: int = 3
+    round_pause: float = 20.0
     _cooldown: dict[str, float] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
@@ -282,43 +294,71 @@ class GeminiPool:
         last = "no attempt made"
         n = 0
         started = time.time()
-        for model in self.models:
-            for attempt in range(self.attempts_per_model):
-                # A hung request used to stall the caller for up to 4 models x 2 attempts x 120 s,
-                # i.e. 16 minutes of silence. An unattended pipeline needs a wall-clock budget, and
-                # it needs to fail loudly at the end of it rather than hang.
+        for ladder_round in range(self.ladder_rounds):
+            if ladder_round:
+                pause = self.round_pause * ladder_round
                 remaining = total_timeout - (time.time() - started)
-                if remaining <= 15:
+                if remaining <= pause + 15:
                     raise PoolExhausted(
-                        f"{self.workflow}: {total_timeout:.0f}s budget exhausted after {model}; last: {last}")
-                keys = self._ready_keys()
-                key = keys[n % len(keys)]
-                n += 1
-                kid = key_id(key)[:4]
-                status, body = _request(f"{BASE_URL}/models/{model}:generateContent", key, payload,
-                                        timeout=min(120.0, remaining))
-                if status == 200 and isinstance(body, dict):
-                    text, why = _text_of(body)
-                    if text:
-                        return text
-                    # A 200 with no text is a configuration failure, not a transient one:
-                    # retrying the same ceiling produces the same empty answer and burns the pool.
-                    raise GeminiError(f"{self.workflow}: empty candidate ({why}); raise max_output_tokens")
-                if status in ROTATE_STATUSES:
-                    self._cooldown[key_id(key)] = time.time() + self.cooldown_seconds * (attempt + 1)
-                    last = f"{model} kid={kid} HTTP {status} -> key on cooldown"
-                elif status in FATAL_STATUSES:
-                    raise GeminiError(f"{self.workflow}: {model} rejected (HTTP {status}); not a quota problem")
-                else:
-                    last = f"{model} kid={kid} HTTP {status}"
+                        f"{self.workflow}: {total_timeout:.0f}s budget exhausted after {ladder_round} "
+                        f"ladder pass(es); last: {last}", transient=True)
+                log(f"[{self.workflow}] provider busy after pass {ladder_round}/{self.ladder_rounds}; "
+                    f"waiting {pause:.0f}s before walking the ladder again")
+                time.sleep(pause)
+            for model in self.models:
+                for attempt in range(self.attempts_per_model):
+                    # A hung request used to stall the caller for up to 4 models x 2 attempts x 120 s,
+                    # i.e. 16 minutes of silence. An unattended pipeline needs a wall-clock budget, and
+                    # it needs to fail loudly at the end of it rather than hang.
+                    remaining = total_timeout - (time.time() - started)
+                    if remaining <= 15:
+                        raise PoolExhausted(
+                            f"{self.workflow}: {total_timeout:.0f}s budget exhausted after {model}; "
+                            f"last: {last}", transient=True)
+                    keys = self._ready_keys()
+                    key = keys[n % len(keys)]
+                    n += 1
+                    kid = key_id(key)[:4]
+                    status, body = _request(f"{BASE_URL}/models/{model}:generateContent", key, payload,
+                                            timeout=min(120.0, remaining))
+                    if status == 200 and isinstance(body, dict):
+                        text, why = _text_of(body)
+                        if text:
+                            return text
+                        # A 200 with no text is a configuration failure, not a transient one:
+                        # retrying the same ceiling produces the same empty answer and burns the pool.
+                        raise GeminiError(f"{self.workflow}: empty candidate ({why}); raise max_output_tokens")
+                    if status in ROTATE_STATUSES:
+                        self._cooldown[key_id(key)] = time.time() + self.cooldown_seconds * (attempt + 1)
+                        last = f"{model} kid={kid} HTTP {status} -> key on cooldown"
+                    elif status in TRANSIENT_STATUSES:
+                        # The model is busy, not broken, and not the key's fault: leave the key alone
+                        # and wait long enough that the wait can outlast the spike.
+                        last = f"{model} kid={kid} HTTP {status} (busy)"
+                        if attempt < self.attempts_per_model - 1:
+                            delay = self.transient_delay * (2 ** attempt) + random.uniform(0, 1.5)
+                            delay = min(delay, max(0.0, remaining - 12))
+                            log(f"[{self.workflow}] {last}; retrying in {delay:.1f}s")
+                            time.sleep(delay)
+                        continue
+                    elif status in FATAL_STATUSES:
+                        raise GeminiError(f"{self.workflow}: {model} rejected (HTTP {status}); not a quota problem")
+                    else:
+                        last = f"{model} kid={kid} HTTP {status}"
 
-                if attempt < self.attempts_per_model - 1:
-                    delay = self.base_delay * (2 ** attempt) + random.uniform(0, 0.5)
-                    log(f"[{self.workflow}] {last}; retrying in {delay:.1f}s")
-                    time.sleep(delay)
-            log(f"[{self.workflow}] {model} unavailable, trying next model in the ladder")
+                    if attempt < self.attempts_per_model - 1:
+                        delay = self.base_delay * (2 ** attempt) + random.uniform(0, 0.5)
+                        log(f"[{self.workflow}] {last}; retrying in {delay:.1f}s")
+                        time.sleep(delay)
+                log(f"[{self.workflow}] {model} unavailable, trying next model in the ladder")
 
-        raise PoolExhausted(f"{self.workflow}: every model in the ladder failed; last: {last}")
+        # Everything failed. Whether that is worth retrying later depends on WHY: a busy provider is
+        # transient and the scheduler should try again shortly, while an exhausted pool or a rejected
+        # request wants a human. The flag carries that distinction to the caller.
+        transient = "HTTP 50" in last or "on cooldown" in last
+        raise PoolExhausted(
+            f"{self.workflow}: every model in the ladder failed after {self.ladder_rounds} pass(es); "
+            f"last: {last}", transient=transient)
 
     def generate_audio(self, text: str, *, voice: str, style: str | None = None,
                        models: tuple[str, ...] | None = None,
@@ -347,36 +387,58 @@ class GeminiPool:
         last = "no attempt made"
         n = 0
         started = time.time()
-        for model in ladder:
-            for attempt in range(self.attempts_per_model):
+        for ladder_round in range(self.ladder_rounds):
+            if ladder_round:
+                pause = self.round_pause * ladder_round
                 remaining = total_timeout - (time.time() - started)
-                if remaining <= 15:
-                    raise PoolExhausted(f"{self.workflow}: TTS budget exhausted after {model}; last: {last}")
-                keys = self._ready_keys()
-                key = keys[n % len(keys)]
-                n += 1
-                kid = key_id(key)[:4]
-                status, body = _request(f"{BASE_URL}/models/{model}:generateContent", key, payload,
-                                        timeout=min(120.0, remaining))
-                if status == 200 and isinstance(body, dict):
-                    data, mime = _audio_of(body)
-                    if data:
-                        return data, mime
-                    last = f"{model} kid={kid} 200 but no audio part"
-                    break  # a shape problem will not fix itself on the next key; try the next model
-                if status in ROTATE_STATUSES:
-                    self._cooldown[key_id(key)] = time.time() + self.cooldown_seconds * (attempt + 1)
-                    last = f"{model} kid={kid} HTTP {status} -> key on cooldown"
-                elif status in FATAL_STATUSES:
-                    raise GeminiError(f"{self.workflow}: TTS {model} rejected (HTTP {status})")
-                else:
-                    last = f"{model} kid={kid} HTTP {status}"
-                if attempt < self.attempts_per_model - 1:
-                    delay = self.base_delay * (2 ** attempt) + random.uniform(0, 0.5)
+                if remaining <= pause + 15:
+                    raise PoolExhausted(
+                        f"{self.workflow}: TTS {total_timeout:.0f}s budget exhausted after "
+                        f"{ladder_round} pass(es); last: {last}", transient=True)
+                log(f"[{self.workflow}] tts provider busy; waiting {pause:.0f}s then retrying the ladder")
+                time.sleep(pause)
+            for model in ladder:
+                for attempt in range(self.attempts_per_model):
+                    remaining = total_timeout - (time.time() - started)
+                    if remaining <= 15:
+                        raise PoolExhausted(
+                            f"{self.workflow}: TTS budget exhausted after {model}; last: {last}",
+                            transient=True)
+                    keys = self._ready_keys()
+                    key = keys[n % len(keys)]
+                    n += 1
+                    kid = key_id(key)[:4]
+                    status, body = _request(f"{BASE_URL}/models/{model}:generateContent", key, payload,
+                                            timeout=min(120.0, remaining))
+                    if status == 200 and isinstance(body, dict):
+                        data, mime = _audio_of(body)
+                        if data:
+                            return data, mime
+                        last = f"{model} kid={kid} 200 but no audio part"
+                        break  # a shape problem will not fix itself on the next key; try the next model
+                    if status in ROTATE_STATUSES:
+                        self._cooldown[key_id(key)] = time.time() + self.cooldown_seconds * (attempt + 1)
+                        last = f"{model} kid={kid} HTTP {status} -> key on cooldown"
+                    elif status in TRANSIENT_STATUSES:
+                        last = f"{model} kid={kid} HTTP {status} (busy)"
+                        if attempt < self.attempts_per_model - 1:
+                            delay = self.transient_delay * (2 ** attempt) + random.uniform(0, 1.5)
+                            delay = min(delay, max(0.0, remaining - 12))
+                            log(f"[{self.workflow}] tts {last}; retrying in {delay:.1f}s")
+                            time.sleep(delay)
+                        continue
+                    elif status in FATAL_STATUSES:
+                        raise GeminiError(f"{self.workflow}: TTS {model} rejected (HTTP {status})")
+                    else:
+                        last = f"{model} kid={kid} HTTP {status}"
+                    if attempt < self.attempts_per_model - 1:
+                        delay = self.base_delay * (2 ** attempt) + random.uniform(0, 0.5)
                     log(f"[{self.workflow}] tts {last}; retrying in {delay:.1f}s")
                     time.sleep(delay)
             log(f"[{self.workflow}] tts {model} unavailable, next model in the TTS ladder")
-        raise PoolExhausted(f"{self.workflow}: every TTS model failed; last: {last}")
+        transient = "HTTP 50" in last or "on cooldown" in last
+        raise PoolExhausted(f"{self.workflow}: every TTS model failed; last: {last}",
+                            transient=transient)
 
 
 class GeminiError(RuntimeError):
@@ -427,7 +489,23 @@ def _text_of(body: dict) -> tuple[str, str]:
 
 
 class PoolExhausted(GeminiError):
-    """Raised when a workflow's pool cannot serve a request. Escalate (L3), never swallow."""
+    """Raised when a workflow's pool cannot serve a request. Escalate (L3), never swallow.
+
+    `transient=True` means the provider was busy (HTTP 5xx / every key on cooldown) rather than the
+    pool being unusable. The difference decides what happens next: a transient exhaustion is worth
+    retrying shortly and must NOT consume one of a posting slot's three attempts, while a permanent
+    one wants a human. See `x_scheduler.py` and the 2026-11-03 outage.
+    """
+
+    def __init__(self, message: str, transient: bool = False) -> None:
+        super().__init__(message)
+        self.transient = transient
+
+
+
+def is_transient(exc: BaseException) -> bool:
+    """Did this failure mean 'try again shortly' rather than 'something is wrong'?"""
+    return isinstance(exc, PoolExhausted) and bool(getattr(exc, "transient", False))
 
 
 def ladder_for(workflow: str) -> tuple[str, ...]:

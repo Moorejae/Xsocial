@@ -47,7 +47,11 @@ LOG = ROOT / "out" / "scheduler.log"
 STATE = ROOT / "out" / "schedule_state.json"
 WATCH_LOG = ROOT / "out" / "watchdog.log"
 HEARTBEAT_MARK = ROOT / "out" / ".heartbeat"
-PASS_RE = re.compile(r"^=== (?P<wf>\w+) · (?P<stamp>\d{4}-\d{2}-\d{2} \d{2}:\d{2}) (?P<tz>\S+) ===$")
+# The pass header. A trailing `· privacy=public` was added on 2026-11-03, so the pattern tolerates
+# any suffix between the timezone and the closing `===` — a stricter pattern silently matched nothing
+# and made the watchdog believe there had been no pass at all.
+PASS_RE = re.compile(r"^=== (?P<wf>\w+) · (?P<stamp>\d{4}-\d{2}-\d{2} \d{2}:\d{2}) "
+                     r"(?P<tz>[^ ]+)(?: · [^=]*=.*)? ===$")
 
 
 def env_of(path: Path) -> dict[str, str]:
@@ -132,13 +136,16 @@ def check(now: datetime, max_age: float, deadline_hour: int) -> list[str]:
                        if k.startswith(f"{day}:post:") and v.get("posted")]
         sched = (cfg.get(wf) or {}).get("schedule") or {}
         hours = sched.get("post_hours") or [10, 17]
-        # A posting hour that has passed by more than the retry budget with nothing posted is overdue.
+        # A posting hour that has passed, with fewer posts than slots, is overdue. The old condition
+        # was `if overdue and problems == [] or (overdue and age is not None and age <= max_age)` —
+        # `and`/`or` precedence made it report one channel and not the other depending on what had
+        # already been appended, so an outage could be half-reported. Simpler and correct now.
         overdue = []
         for idx, hour in enumerate(hours):
             slot_past = now.hour > hour or (now.hour == hour and now.minute > 45)
             if slot_past and len(posts_today) <= idx:
                 overdue.append(f"{hour:02d}:xx")
-        if overdue and problems == [] or (overdue and age is not None and age <= max_age):
+        if overdue:
             problems.append(f"{wf}: nothing posted for slot(s) {', '.join(overdue)} "
                             f"({len(posts_today)} posted today)")
 
