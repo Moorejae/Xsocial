@@ -4,6 +4,46 @@ Newest first. Every change gets an entry, with evidence. See [AGENTS.md](AGENTS.
 
 ---
 
+## 2026-11-03 (the first post made by the VPS; the 17:09 slot brought forward)
+
+**Skills loaded:** `x-vps-deploy` (how to run a pass and where the ledger lives), `x-publishing` (the claim-before-upload ledger, which is why bringing a slot forward is safe).
+
+**Plane(s):** `169.58.212.7:/root/X` only.
+
+**Asked:** "when is the new video posting" — answered (17:09 and 17:38), and then the wait was removed instead of
+described. The upload path from the VPS was the last unproven link: `--check` proved token refresh and API
+reachability there, but not a full resumable PUT of a 16 MB file.
+
+**Changed:** nothing in code. `scripts/youtube_upload.py` was run on the VPS against the render already waiting in
+`out/jephter/`, and `out/schedule_state.json` was updated so `2026-11-03:post:1` is marked posted — the 17:09 pass
+will not upload a second video.
+
+**Verified:**
+
+```text
+credential ok: Chinedu Jephtah (UCdp3tJItzt-sI-9UGX9CCvw)   # from the VPS
+title: I swore to myself that keeping my distance was safer than trusting anyone
+privacy: public   size: 16662 KB   sha: 546dd27e326fa5ef
+posted to: Chinedu Jephtah
+uploaded: https://youtu.be/xyvq9MzHzHk  (public, state uploaded)
+
+# and from YouTube itself, no credential involved:
+xyvq9MzHzHk -> 'I swore to myself that keeping my distance was safer than trusting anyone'
+               | channel: Chinedu Jephtah
+
+jephter   post 17:09  posted  out/jephter/jephter_20261103-142222.mp4
+emmanuel  post 17:38  pending
+```
+
+So the VPS produces, tests, renders **and** publishes. The 17:38 emmanuel slot is left to the timer, which is the
+point of the timer.
+
+**Left open:** the 17:38 emmanuel post is the remaining confirmation that the schedule fires unattended. The
+private `f0WJBpcMRVw` on Brown Cinema and the nonsense title on `pPpfLrRgOzU` still need one click each in YouTube
+Studio — `videos.update` needs a scope we deliberately do not hold.
+
+---
+
 ## 2026-11-03 (the clip libraries are a COPY on the laptop, not moved off the VPS)
 
 **Skills loaded:** `x-vps-deploy` (its own media table, which is what needed correcting), `x-video-pipeline`
