@@ -212,6 +212,7 @@ Skills learned *in this project* go in `X\skills\<name>\SKILL.md`, same format a
 | **`x-forchi-bridge`** | Anything that reaches into `C:\Users\hp\forchi`: its voice backend, its writing formats, its emotion labels. Read before touching that project from here. |
 | **`x-vps-deploy`** | The pipeline runs on `169.58.212.7` now: redeploying after a code change, running a pass by hand, what git cannot carry, and the ordering that stops two machines double-posting. |
 | **`x-publishing`** | Publishing to YouTube: the one client with three channels, the consent step, the double-post ledger, quota, and how to schedule the daily run. |
+| **`x-build-from-scratch`** | "How is this built", a new channel, a new host, a rebuild, or the acceptance sweep that proves it will post tomorrow unattended. It is the **order and the gates**; the area skills above hold the detail. |
 
 ---
 

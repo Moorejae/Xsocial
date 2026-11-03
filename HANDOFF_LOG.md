@@ -4,6 +4,55 @@ Newest first. Every change gets an entry, with evidence. See [AGENTS.md](AGENTS.
 
 ---
 
+## 2026-11-03 (the build is now a skill: every stage, with its gate)
+
+**Skills loaded:** `x-build-from-scratch` did not exist — this entry creates it. I read `x-vps-deploy`,
+`x-video-pipeline`, `x-voice-personas`, `x-publishing`, `x-watchdog`, `x-gemini-key-pool` and
+`x-google-console-oauth` outlines to decide what the new file should **not** repeat: each of those owns one
+area, and the gap was the *order* and the *acceptance check* between them.
+
+**Plane(s):** this folder only — documentation. Nothing on the host changed.
+
+**Asked:** "would you mind turning the entire build process into a skill. add this skill in the skill folder."
+
+### Changed
+
+| File | Change |
+| :--- | :--- |
+| [`skills/x-build-from-scratch/SKILL.md`](skills/x-build-from-scratch/SKILL.md) | **new.** Thirteen stages — read-and-arm the repo, identity, keys, one Google project per channel, the pages Google reads, media and labels, the look, one hand-built video, the publish path, the schedule, the fallbacks, the host, the acceptance sweep — each with the command that makes the artefact and the check that proves it |
+| `AGENTS.md` §4 | the new skill is listed, described as *the order and the gates*, pointing at the area skills for detail |
+
+Every command in it was run in this workspace, and the flags are read from the scripts' own `add_argument`
+calls rather than from memory — `x_media.py --label --vision`, `label_emotions.py --workflow --table`,
+`youtube_auth.py --serve --selftest`, `youtube_upload.py --check`, `x_scheduler.py --verify --status --once
+--dry-run`, `x_watchdog.py --selftest --test-mail --test-reminder --heartbeat-hour`,
+`bootstrap_vps.py --check`, `sync_media.py --verify`.
+
+Three things it states that a reader would otherwise have to discover:
+
+- **`jephter` → `media_dir: jephtah`.** The workflow and the folder are spelled differently on purpose. It is
+  the first thing a new agent would "fix", and doing so breaks every path.
+- **A stage without a gate does not exist.** The gates are the point of the file: `--check` for a credential,
+  the report JSON for a render, `oEmbed` for a public video, `--test-mail` for the mail path.
+- **Check mail first on a new host.** It is the rung that makes every other failure visible, and on
+  2026-11-03 it was the one that was broken.
+
+### Verified
+
+```text
+python tests\run_tests.py                                   ->  59 passed, 0 failed
+frontmatter name == folder name ("x-build-from-scratch")    ->  required, or the skill never loads
+13 stages, 11 rows in the consolidated trap table
+```
+
+Every command named in the skill was executed in this workspace during this session; the flags were listed
+from `Select-String add_argument` across the sixteen scripts rather than typed from memory.
+
+**Left open:** `channel_handle` is still `@TODO-…` for both channels and `site_host` is still
+`TODO.example.com` — Stage 1 flags both, and Google verification cannot pass until they are real. Nothing else.
+
+---
+
 ## 2026-11-03 (the VPS could not send mail, and nothing was checking)
 
 **Skills loaded:** `x-watchdog` (the day-4/day-5 reminder contract and the L2–L4 rungs, which is where I
