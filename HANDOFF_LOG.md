@@ -4,6 +4,67 @@ Newest first. Every change gets an entry, with evidence. See [AGENTS.md](AGENTS.
 
 ---
 
+## 2026-11-08 (the "broken" OAuth link was a missing listener; `--push` closes the half-step)
+
+**Skills loaded:** `x-google-console-oauth` (its failure catalogue had the exact symptom — a loopback redirect and a
+browser that shows "site can't be reached" — and its own warning that a token can be lost with no error anywhere),
+`x-watchdog` (the day-4/day-5 reminder contract, and where `out/auth_reminders.json` lives), `x-vps-deploy` (the
+token file is one of the things git cannot carry).
+
+**Plane(s):** this folder and `169.58.212.7:/root/X`.
+
+**Asked:** "hey, the oauth link isnt working."
+
+### It was not the link
+
+Both consent URLs were fetched against Google and returned **HTTP 200 on the sign-in page**, with no
+`redirect_uri_mismatch` and no `invalid_client` — the client and the redirect are registered correctly. The failure is
+always the last hop: after approval the browser is sent to `http://localhost:8765/<channel>/callback`, and with no
+listener there the page fails and the code is lost. That is the trap this project already recorded, and it still looks
+exactly like a broken link.
+
+**The channel state when the message arrived:** tokens obtained 2026-11-01, expiring **today** — emmanuel 14:35,
+jephter 15:08 — with 8 videos already out (2 per channel per day, 4–7 November, every one public). All four
+re-authorisation reminders had been sent on the 4th and 5th, so the mail half was working; the re-auth itself had not
+happened.
+
+### Done
+
+| Step | Evidence |
+| :--- | :--- |
+| started the listener for both channels, 30 min | `SAVED jephter: authorised Chinedu Jephtah (UCdp3tJItzt-sI-9UGX9CCvw)` and `SAVED emmanuel: authorised Brown Cinema (UCYjRtF_ECcIaF8ldCGXAI2w)`, both with `youtube.upload` |
+| proved the new tokens locally | `access token ok (253 chars)` for both, each naming the right channel |
+| copied the sealed tokens to the host | obtained `2026-11-08T10:06:58`, **expires 2026-11-15 10:06**; emmanuel 10:08 → 15th |
+| proved them **on the host** | `youtube_upload.py --check` → `credential ok: Chinedu Jephtah …` and `… Brown Cinema …` |
+| saw the fresh token publish | `post 10:06: jephter_20261108-070222.mp4 -> published`, `leLvq1m7VtM`, **public** |
+
+### Changed, so the next cycle is not this cycle
+
+| File | Change |
+| :--- | :--- |
+| `youtube_auth.py` | **new `--push`**: copies the sealed token to `169.58.212.7:/root/X/secrets/youtube/`, chmods `600`, then runs the **host's** `youtube_upload.py --check` so a wrong-account token fails on the command that just ran. Before this, authorising on the laptop left the host refreshing the old token — half a procedure, and silent |
+| `x_watchdog.py` | the reminder mail now leads with the *quickest complete* path (`--serve`, then `--push`) and keeps the paste-back as the branch for a phone or the host. It used to give only the paste-back, which is why a link that works looked broken |
+| `skills/x-google-console-oauth` | the one-request diagnosis (`200` on the sign-in page = the link is fine), the two things a person can see and the different fix each needs, and the `--push` step |
+
+### Verified
+
+```text
+python scripts\youtube_auth.py --workflow jephter  --push
+  credential ok: Chinedu Jephtah (UCdp3tJItzt-sI-9UGX9CCvw)          exit 0
+python scripts\youtube_auth.py --workflow emmanuel --push
+  credential ok: Brown Cinema (UCYjRtF_ECcIaF8ldCGXAI2w)             exit 0
+
+python scripts\x_watchdog.py --selftest     ->  0   (the rewritten mail keeps every assertion)
+python tests\run_tests.py                   ->  59 passed, 0 failed
+```
+
+`out/auth_reminders.json` keys each channel's sent days by `obtained_at`, so the new grant restarts the schedule by
+itself: reminders for this token are due on **11 and 12 November**, not before.
+
+**Left open:** nothing. The 17:xx pair today will use the token obtained at 10:06.
+
+---
+
 ## 2026-11-03 (the build is now a skill: every stage, with its gate)
 
 **Skills loaded:** `x-build-from-scratch` did not exist — this entry creates it. I read `x-vps-deploy`,

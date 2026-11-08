@@ -40,6 +40,7 @@ import http.server
 import json
 import os
 import socketserver
+import subprocess
 import sys
 import threading
 import time
@@ -633,6 +634,39 @@ def exchange_pasted(workflow: str, pasted: str, port: int,
     return 0
 
 
+def push(workflow: str) -> int:
+    """Send this channel's sealed token to the host that publishes, and prove it there.
+
+    Authorising on the laptop is the quickest path — `--serve` prints a link that works end to end —
+    but the pipeline runs on the VPS, and a token saved only on the laptop is half a procedure: the
+    host keeps refreshing the old one and the channel goes quiet a week later with nothing to show for
+    it. That half-step is exactly what this closes.
+    """
+    local = SECRETS / f"{workflow}.json"
+    if not local.exists():
+        print(f"  no token at {local.relative_to(ROOT)} — authorise {workflow} first", file=sys.stderr)
+        return 1
+    vps = ROOT / "scripts" / "vps.py"
+    remote_root = "/root/X"
+    remote = f"{remote_root}/secrets/youtube/{workflow}.json"
+
+    print(f"  pushing {local.relative_to(ROOT)} -> 169.58.212.7:{remote}")
+    rc = subprocess.call([sys.executable, str(vps), "--put", str(local), remote])
+    if rc != 0:
+        print(f"  copy failed (rc={rc}); nothing was changed on the host", file=sys.stderr)
+        return rc
+
+    # chmod, then let the host's own uploader name the channel. If the host still refreshes the old
+    # token, this prints the wrong channel or fails outright, on the command the operator just ran.
+    check = (f"cd {remote_root} && chmod 600 secrets/youtube/*.json && "
+             f".venv/bin/python scripts/youtube_upload.py --workflow {workflow} --check")
+    rc = subprocess.call([sys.executable, str(vps), check])
+    if rc != 0:
+        print(f"  the host could not use the token it was given (rc={rc})", file=sys.stderr)
+        return rc
+    return 0
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description="YouTube OAuth for one X workflow (never prints a secret)")
     ap.add_argument("--workflow", choices=WORKFLOWS)
@@ -652,6 +686,8 @@ def main() -> int:
                     help="print the consent URL only. The client id appears in it by design — "
                          "Google puts it in every consent URL; the secret never does.")
     ap.add_argument("--access-token", action="store_true", help="refresh and report the channel")
+    ap.add_argument("--push", action="store_true",
+                    help="copy this channel's sealed token to the publishing host and prove it there")
     a = ap.parse_args()
 
     if a.selftest:
@@ -666,6 +702,9 @@ def main() -> int:
 
     if a.from_url:
         return exchange_pasted(a.workflow, a.from_url, a.port, a.client_id, a.client_secret)
+
+    if a.push:
+        return push(a.workflow)
 
     if a.print_url:
         # Use the same client chain as the real flow, so this check cannot disagree with it.

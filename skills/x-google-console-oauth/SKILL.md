@@ -127,6 +127,49 @@ paths is enough for both.
 | `access_denied` during consent | the client's Google account is not a test user while the app is in Testing | publish, or add the account as a test user |
 | Callback page says **Not authorised** and shows `HTTPError: HTTP Error 403: Forbidden`, on every channel at once | the scope requested does not allow the call the authoriser makes after the exchange: `youtube.upload` alone cannot call `channels.list` | request `youtube.readonly` too, **restart the `--serve` listener** (a running process keeps the old `SCOPES`), and open the newly printed link. Token saving must not depend on that read-back — `whoami_safe()` in `youtube_auth.py` exists for exactly this |
 | The consent link was emailed to the channel owner and their browser shows "site can't be reached" after approving | the redirect is a **loopback** URI: `http://localhost:8765/<wf>/callback` exists only on the machine running the tool, not on theirs | expected. The code is in *their* address bar — have them send the whole URL back, then `python scripts\youtube_auth.py --workflow <wf> --from-url "<that url>"`. `x_watchdog.py` mails exactly these instructions on day 4 and day 5 of the token's life |
+| "The OAuth link isn't working" and there is no error text to go on | nothing is wrong with the link. Both consent URLs return **HTTP 200 on `accounts.google.com`** when fetched, with no `redirect_uri_mismatch` and no `invalid_client` — so the client and the redirect are registered. The failure is always the *last hop*: approve, then `localhost:8765` has nobody listening |
+
+### "The link isn't working" — diagnose it in one request before believing it
+
+```python
+import sys; sys.path.insert(0, "scripts")
+import youtube_auth as ya, urllib.request
+cid, _ = ya.credentials("jephter")
+with urllib.request.urlopen(ya.consent_url("jephter", cid), timeout=25) as r:
+    print(r.status, r.url)          # 200 https://accounts.google.com/... = the link is fine
+```
+
+A `400` whose body contains `redirect_uri_mismatch` is a console problem. `200` on the sign-in page means the link is
+good and the remaining fault is one of exactly two things — and they need different words:
+
+| What the person saw | What actually happened | Fix |
+| :--- | :--- | :--- |
+| the sign-in page, then **"site can't be reached" / "localhost refused to connect"** | approved, and no listener on `localhost:8765` | either run `--serve` **first** (`python scripts\youtube_auth.py --serve` prints both links and waits 15 min), or paste the failing address back with `--from-url` |
+| **"Access blocked / Error 403: access_denied"** | the Google account is not a test user on that project while the app is in Testing | add the account as a test user in the console — a link from an email cannot fix this |
+
+### Re-authorising on the laptop leaves the host holding the old token
+
+The pipeline runs on `169.58.212.7`, the browser is on the laptop. `--serve` saves a token **on the laptop**, and the
+host keeps refreshing its own older one, so the channel goes quiet a week later with nothing pointing at the cause.
+`--push` closes that half-step — it copies the sealed file and then makes the **host's own uploader** name the channel:
+
+```powershell
+python scripts\youtube_auth.py --serve                 # prints both links, waits
+python scripts\youtube_auth.py --workflow jephter  --push
+python scripts\youtube_auth.py --workflow emmanuel --push
+```
+
+`--push` chmods `600` on arrival and runs `youtube_upload.py --check` there, so a wrong-account token fails on the
+command that just ran instead of at 17:00. Path chosen for the host-side alternative instead? The paste-back route
+needs no listener at all:
+
+```powershell
+python scripts\youtube_auth.py --workflow jephter --print-url     # open anywhere
+python scripts\youtube_auth.py --workflow jephter --from-url "http://localhost:8765/jephter/callback?code=..."
+```
+
+Whichever way: **copy the token to the host before the old one expires** — 7 days after `obtained_at`, which the
+reminder mail names as a date.
 
 ## Verification
 
