@@ -262,17 +262,30 @@ def ledger_lock(path: Path | None = None, timeout: float = LOCK_TIMEOUT):
     token = f"{os.getpid()}-{uuid.uuid4().hex[:8]}"
     fd = None
     while fd is None:
+        # The deadline is checked FIRST, on every pass, and every failing pass sleeps. An earlier
+        # version checked it only after a successful `stat()` and did `continue` without sleeping on
+        # the exception paths, so a lock whose `stat()` kept failing (Windows reports EACCES while
+        # another handle is mid-delete) spun forever: no timeout, no sleep, no output. That is a hang
+        # that looks exactly like a dead pipeline, so it is pinned by a test.
+        if time.monotonic() >= deadline:
+            raise TimeoutError(
+                f"publish ledger is still locked after {timeout:.0f}s: {lock}\n"
+                f"  If no run is in progress, delete that file.") from None
         try:
             fd = os.open(lock, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
-        except FileExistsError:
+        except (FileExistsError, PermissionError):
+            # Windows returns a bare EACCES (`Permission denied`) — not EEXIST — when the file exists
+            # and another handle is mid-delete. Catch it as "someone else has it", or a concurrent
+            # holder crashes the run with PermissionError instead of waiting its turn.
             try:
-                if time.time() - lock.stat().st_mtime > timeout:   # left by a process that died
-                    lock.unlink(missing_ok=True)
-                    continue
-            except (FileNotFoundError, PermissionError):
-                continue
-            if time.monotonic() >= deadline:
-                raise TimeoutError(f"publish ledger is still locked after {timeout:.0f}s: {lock}")
+                stale = time.time() - lock.stat().st_mtime > timeout   # left by a process that died
+            except OSError:
+                stale = False
+            if stale:
+                try:
+                    lock.unlink()
+                except OSError:
+                    pass
             time.sleep(0.05)
     try:
         os.write(fd, token.encode())

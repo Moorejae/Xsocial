@@ -39,6 +39,7 @@ import base64
 import http.server
 import json
 import os
+import socket
 import socketserver
 import subprocess
 import sys
@@ -58,14 +59,19 @@ AUTH_URI = "https://accounts.google.com/o/oauth2/v2/auth"
 TOKEN_URI = "https://oauth2.googleapis.com/token"
 CHANNELS_URI = "https://www.googleapis.com/youtube/v3/channels"
 
-# The narrowest scopes that can publish, plus enough to *read back* the channel we authorised.
+# The scopes to request. **These must match the app's approved Data Access list, character for
+# character** — a production app refuses a sensitive scope that is not in it, and Google's number-one
+# verification rejection is exactly this mismatch.
+#
+# One app serves three channels (ForChi + jephter + emmanuel) and its approved list is
+# `youtube.upload` + `youtube.force-ssl`. `youtube.readonly` used to be requested here to make the
+# channel read-back possible; `youtube.force-ssl` grants that read **and** write, and is the one
+# Google approved (measured 2026-11-14: still Testing then; verified to production 2026-11-17).
 # `youtube.upload` alone covers videos.insert but NOT channels.list — asking for only that made every
-# verification call answer 403 and the token was discarded unsaved (measured 2026-11-01, both channels).
-# `youtube.readonly` is what lets us prove which channel consented, which is the whole point of the
-# read-back; it grants no write capability.
+# verification call answer 403 and the token was discarded unsaved (2026-11-01, both channels).
 SCOPES = (
     "https://www.googleapis.com/auth/youtube.upload",
-    "https://www.googleapis.com/auth/youtube.readonly",
+    "https://www.googleapis.com/auth/youtube.force-ssl",
     "openid",
     "email",
 )
@@ -74,16 +80,10 @@ SCOPES = (
 def scopes() -> list[str]:
     """The scopes to request: the minimum above, plus anything named in `X_EXTRA_SCOPES`.
 
-    Why the seam exists: `videos.update` — the only way to correct a title, description, tags or
-    privacy after upload — refuses `youtube.upload`. Google's own reference lists exactly three
-    accepted scopes for it: `youtubepartner`, `youtube`, `youtube.force-ssl`. So a metadata mistake
-    cannot be fixed by the token that created it, and re-consenting mid-week without warning is not
-    something to do to a client by surprise.
-
-    Keeping the default minimal is deliberate — a publishing tool should not hold write access to
-    everything else on the channel. When a correction is genuinely needed, set
-    `X_EXTRA_SCOPES=https://www.googleapis.com/auth/youtube.force-ssl` and the next consent (the
-    day-4/day-5 re-authorisation already happens) carries it.
+    Why the seam still exists: it is how a scope is added without editing code — set
+    `X_EXTRA_SCOPES=…` and the next consent carries it. Note that `youtube.force-ssl` is now in the
+    default set, so `videos.update` — the only way to correct a title, description, tags or privacy
+    after upload — works with the ordinary token instead of needing a special consent.
     """
     extra = [s.strip() for s in read_env("X_EXTRA_SCOPES").replace(",", " ").split() if s.strip()]
     out = list(SCOPES)
@@ -185,15 +185,23 @@ def post_form(url: str, fields: dict) -> dict:
         raise SystemExit(f"token endpoint HTTP {exc.code}: {body[:400]}")
 
 
+NO_CHANNEL_TITLE = "(no channel on this account)"
+
+
 def whoami(access_token: str) -> tuple[str, str]:
-    """Read back the authorised channel. This is the evidence that consent landed on the right one."""
+    """Read back the authorised channel. This is the evidence that consent landed on the right one.
+
+    `channels.list(mine=true)` needs `youtube.force-ssl` (or `youtube.readonly`). Measured 2026-11-17:
+    the app's approved scope list is `youtube.upload` + `youtube.force-ssl`, and force-ssl is a read
+    scope as well as a write one — so this call works with the pair Google actually verified.
+    """
     url = CHANNELS_URI + "?" + urllib.parse.urlencode({"part": "snippet", "mine": "true"})
     req = urllib.request.Request(url, headers={"authorization": f"Bearer {access_token}"})
     with urllib.request.urlopen(req, timeout=60) as resp:
         body = json.loads(resp.read().decode("utf-8", "replace"))
     items = body.get("items") or []
     if not items:
-        return "(no channel on this account)", "(none)"
+        return NO_CHANNEL_TITLE, "(none)"
     return items[0]["snippet"]["title"], items[0]["id"]
 
 
@@ -203,12 +211,25 @@ def whoami_safe(access_token: str) -> tuple[str, str]:
     A refresh token is the thing consent exists to produce. Reading the channel back is evidence, not
     the deliverable, so a failure here must not discard the token — on 2026-11-01 a 403 from
     channels.list made both channels look unauthorised while the exchange had actually succeeded.
+
+    The one answer that is **not** a failure is "this account owns no channel". A successful read that
+    returns nothing means the wrong Google account was picked, and that token can never upload. ForChi
+    recorded the cost of saving one anyway (2026-11-17, `identifyChannel` now refuses it): a working
+    channel's token was overwritten by an account that owned no channel, and the channel stopped.
     """
     try:
         return whoami(access_token)
     except Exception as exc:                             # noqa: BLE001 - report, never fatal
         print(f"  could not read the channel back ({type(exc).__name__}: {exc}); token kept", flush=True)
         return "(unread)", f"({type(exc).__name__})"
+
+
+def owns_no_channel(title: str, channel_id: str) -> bool:
+    """True only when the read *succeeded* and found no channel — i.e. the wrong Google account.
+
+    Distinct from `(unread)`, which means the check itself failed and the token must be kept.
+    """
+    return channel_id == "(none)" or title == NO_CHANNEL_TITLE
 
 
 def save(workflow: str, payload: dict) -> Path:
@@ -333,14 +354,54 @@ class _Callback(http.server.BaseHTTPRequestHandler):
         pass
 
 
+class _LoopbackServer(socketserver.ThreadingTCPServer):
+    """A loopback listener that answers on **both** `127.0.0.1` and `[::1]`.
+
+    This is not a nicety. Browsers resolve `localhost` to `::1` (IPv6) first and only fall back to
+    IPv4; a listener bound to `127.0.0.1` alone therefore gives the owner "this site can't be
+    reached" *after* a successful approval, and the code is lost. Measured 2026-11-17: the old
+    listener answered `http://127.0.0.1:8765/...` with 200 while `http://[::1]:8765/...` was actively
+    refused — which is exactly the error the owner saw twice. `IPV6_V6ONLY=0` makes one IPv6 socket
+    accept IPv4 connections too, so either resolution works.
+
+    `allow_reuse_address` is left **off** on purpose: on Windows `SO_REUSEADDR` lets a second process
+    bind a port that is already listening and steal its traffic, so two listeners would look healthy
+    and answer unpredictably. A clash now fails loudly instead.
+    """
+    address_family = socket.AF_INET6
+    daemon_threads = True
+
+    def server_bind(self) -> None:
+        try:
+            self.socket.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_V6ONLY, 0)
+        except (AttributeError, OSError):
+            pass
+        super().server_bind()
+
+
+def loopback_server(handler, port: int) -> "_LoopbackServer":
+    """Bind the dual-stack loopback listener, turning "port busy" into a sentence."""
+    try:
+        return _LoopbackServer(("::", port), handler)
+    except OSError as exc:
+        raise SystemExit(
+            f"cannot listen on port {port} ({exc}). Another listener is probably already running — "
+            f"close it (or use --port {port + 1} and register that redirect URI first)."
+        ) from None
+
+
+def free_port() -> int:
+    """An unused loopback port. For tests, and for suggesting `--port` after a clash."""
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
+        probe.bind(("127.0.0.1", 0))
+        return int(probe.getsockname()[1])
+
+
 def interactive_consent(workflow: str, client_id: str, client_secret: str, port: int) -> int:
     url = consent_url(workflow, client_id, port)
     _Callback.expected_path = f"/{workflow}/callback"
 
-    class Server(socketserver.TCPServer):
-        allow_reuse_address = True
-
-    with Server(("127.0.0.1", port), _Callback) as httpd:
+    with loopback_server(_Callback, port) as httpd:
         thread = threading.Thread(target=httpd.handle_request, daemon=True)
         thread.start()
         print("Open this URL and approve the upload permission for THIS channel:\n")
@@ -371,6 +432,13 @@ def interactive_consent(workflow: str, client_id: str, client_secret: str, port:
         return 1
 
     title, channel_id = whoami_safe(tokens["access_token"])
+    if owns_no_channel(title, channel_id):
+        print(
+            "\n  REFUSING: that Google account owns no YouTube channel, so the token could never\n"
+            "  upload — and saving it would replace a working one. Nothing was written.\n"
+            "  Sign in as the account that owns the channel, or create a channel for it first.",
+            file=sys.stderr, flush=True)
+        return 1
     payload = {
         "workflow": workflow,
         "client_id": client_id,
@@ -437,29 +505,29 @@ def selftest() -> int:
         platform_note = "posix mode, enforced on Linux" if os.name == "posix" else "posix mode is not enforced on Windows"
     print(f"ok   no plaintext in the written file ({mode}: {platform_note})")
 
-    # The scope request: minimal by default, and only widened on purpose. Checked without touching
+    # The scope request: the approved list plus anything named on purpose. Checked without touching
     # the real .env, so a stray value can never make this test pass by accident.
     global ENV_FILE
     original = ENV_FILE
+    extra_probe = "https://www.googleapis.com/auth/youtubepartner"
     try:
         if scopes() != list(SCOPES):
-            print("FAIL the default scope request is not the minimum")
+            print("FAIL the default scope request is not the plain SCOPES list")
             return 1
-        print("ok   the scope request is the minimum unless X_EXTRA_SCOPES says otherwise")
+        print("ok   the scope request is SCOPES unless X_EXTRA_SCOPES says otherwise")
         with tempfile.TemporaryDirectory() as d:
             probe = Path(d) / ".env"
-            probe.write_text("X_EXTRA_SCOPES=https://www.googleapis.com/auth/youtube.force-ssl\n",
-                             encoding="utf-8")
+            probe.write_text(f"X_EXTRA_SCOPES={extra_probe}\n", encoding="utf-8")
             ENV_FILE = probe
             widened = scopes()
-            if widened[:len(SCOPES)] != list(SCOPES) or widened[-1] != "https://www.googleapis.com/auth/youtube.force-ssl":
+            if widened[:len(SCOPES)] != list(SCOPES) or widened[-1] != extra_probe:
                 print(f"FAIL X_EXTRA_SCOPES did not append cleanly: {widened}")
                 return 1
             probe.write_text("X_EXTRA_SCOPES=\n", encoding="utf-8")
             if scopes() != list(SCOPES):
                 print("FAIL an empty X_EXTRA_SCOPES changed the request")
                 return 1
-        print("ok   X_EXTRA_SCOPES widens the request, and an empty value leaves it alone")
+        print("ok   X_EXTRA_SCOPES appends, and an empty value leaves the request alone")
     finally:
         ENV_FILE = original
     return 0
@@ -503,6 +571,18 @@ class _MultiCallback(http.server.BaseHTTPRequestHandler):
                     # away two perfectly good refresh tokens.
                     title, channel_id = whoami_safe(tokens["access_token"])
                     granted_scopes = tokens.get("scope", " ".join(scopes())).split()
+                    short = " ".join(s.rsplit("/", 1)[-1] for s in granted_scopes)
+                    if owns_no_channel(title, channel_id):
+                        # The wrong Google account was picked. Its token can never upload, and saving
+                        # it would replace a working one — ForChi lost a channel to exactly this on
+                        # 2026-11-17, so the file is left alone and the page says what to do.
+                        ok = False
+                        message = (f"{workflow}: NOT saved — that Google account owns no YouTube "
+                                   f"channel. Open the link again and choose the account that owns "
+                                   f"the {workflow} channel.")
+                        print(f"\n  REFUSED {message}", flush=True)
+                        self._respond(ok, message)
+                        return
                     save(workflow, {
                         "workflow": workflow, "client_id": cid, "client_secret": secret,
                         "refresh_token": tokens["refresh_token"],
@@ -512,7 +592,6 @@ class _MultiCallback(http.server.BaseHTTPRequestHandler):
                         "obtained_at": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
                     })
                     _MultiCallback.saved[workflow] = {"channel_title": title, "channel_id": channel_id}
-                    short = " ".join(s.rsplit("/", 1)[-1] for s in granted_scopes)
                     # A consent that omits youtube.upload cannot post. Say so on the page, while the
                     # owner is still looking at it, instead of letting the scheduler discover it.
                     if not any(s.endswith("/youtube.upload") for s in granted_scopes):
@@ -529,9 +608,12 @@ class _MultiCallback(http.server.BaseHTTPRequestHandler):
             except Exception as exc:                     # noqa: BLE001 - report, never crash the server
                 message = f"{type(exc).__name__}: {exc}"[:200]
 
+        self._respond(ok, message)
+
+    def _respond(self, ok: bool, message: str) -> None:
+        """The page the browser lands on. One place, so an early return cannot send nothing."""
         body = (f"<h2>{'Authorised' if ok else 'Not authorised'}</h2><p>{message}</p>"
-                "<p>You can close this tab.</p>" if ok else
-                f"<h2>Not authorised</h2><p>{message}</p>").encode()
+                + ("<p>You can close this tab.</p>" if ok else "")).encode()
         self.send_response(200)
         self.send_header("content-type", "text/html; charset=utf-8")
         self.send_header("content-length", str(len(body)))
@@ -552,11 +634,7 @@ def serve(workflows: list[str], port: int, timeout: float = 900.0) -> int:
     print(f"\n  listening on http://localhost:{port}/<channel>/callback for {timeout:.0f}s", flush=True)
     print("  open each link above, signed in as that channel's Google account, and approve.\n", flush=True)
 
-    class Server(socketserver.ThreadingTCPServer):
-        allow_reuse_address = True
-        daemon_threads = True
-
-    server = Server(("127.0.0.1", port), _MultiCallback)
+    server = loopback_server(_MultiCallback, port)
     server.timeout = 2.0
     deadline = time.time() + timeout
     try:
@@ -616,6 +694,11 @@ def exchange_pasted(workflow: str, pasted: str, port: int,
         return 1
     title, channel_id = whoami_safe(tokens["access_token"])
     granted = tokens.get("scope", " ".join(scopes())).split()
+    if owns_no_channel(title, channel_id):
+        print(f"REFUSING: that Google account owns no YouTube channel, so this token could never "
+              f"upload — and saving it would replace a working one. Nothing was written. Sign in as "
+              f"the account that owns the {workflow} channel.", file=sys.stderr)
+        return 1
     save(workflow, {
         "workflow": workflow, "client_id": cid, "client_secret": secret,
         "refresh_token": tokens["refresh_token"],

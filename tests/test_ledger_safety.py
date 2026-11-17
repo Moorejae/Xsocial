@@ -8,9 +8,11 @@ file it had already claimed, and the same bytes could upload twice.
 from __future__ import annotations
 
 import json
+import os
 import sys
 import tempfile
 import threading
+import time
 import traceback
 from pathlib import Path
 
@@ -83,14 +85,32 @@ def test_a_corrupt_ledger_reads_as_empty_instead_of_crashing():
 
 
 def test_an_abandoned_lock_is_broken_instead_of_blocking_forever():
+    """A lock left by a process that died must not block the next run for ever.
+
+    "Abandoned" means the file is **older than the timeout**, which is what the owner-check uses to
+    decide the holder can no longer be alive.
+    """
     with tempfile.TemporaryDirectory() as d:
         led = Path(d) / "publish_ledger.json"
         lock = led.with_name(led.name + ".lock")
         lock.write_text("99999", encoding="utf-8")
-        assert yt.ledger_lock(led, timeout=0.01)          # a fresh lock is honoured
-        with yt.ledger_lock(led, timeout=0.05):
+        old = time.time() - 3600
+        os.utime(lock, (old, old))                       # a lock an hour old, from a dead process
+        with yt.ledger_lock(led, timeout=0.2):           # breaks it rather than waiting
             pass
         assert not lock.exists()
+
+
+def test_a_fresh_lock_is_honoured_then_reported_by_name():
+    with tempfile.TemporaryDirectory() as d:
+        led = Path(d) / "publish_ledger.json"
+        lock = led.with_name(led.name + ".lock")
+        lock.write_text("someone-else", encoding="utf-8")
+        try:
+            with yt.ledger_lock(led, timeout=0.2):
+                raise AssertionError("a fresh lock was ignored")
+        except TimeoutError as exc:
+            assert str(lock) in str(exc), str(exc)       # the message names the file to delete
 
 
 def test_the_lock_is_released_even_when_the_body_raises():
@@ -102,6 +122,73 @@ def test_the_lock_is_released_even_when_the_body_raises():
         except RuntimeError:
             pass
         assert not led.with_name(led.name + ".lock").exists()
+
+
+def test_the_lock_wait_always_ends_even_when_stat_keeps_failing():
+    """A wait loop that can `continue` into itself forever is a hang, not a lock.
+
+    The first version checked the deadline only after a *successful* `stat()` and skipped the sleep on
+    the exception paths. With `stat()` failing on every pass — Windows reports EACCES while another
+    handle is mid-delete — it spun with no timeout and no output, which in production looks exactly
+    like a wedged pipeline.
+    """
+    with tempfile.TemporaryDirectory() as d:
+        led = Path(d) / "publish_ledger.json"
+        lock = led.with_name(led.name + ".lock")
+        lock.write_text("held", encoding="utf-8")
+
+        real_open, real_stat = yt.os.open, Path.stat
+        started = time.monotonic()
+
+        def refuse_open(*a, **k):
+            raise PermissionError(13, "Permission denied")
+
+        def refuse_stat(self, *a, **k):
+            raise PermissionError(13, "Permission denied")
+
+        try:
+            yt.os.open = refuse_open          # patched inside the try, so the restore always runs
+            Path.stat = refuse_stat
+            try:
+                with yt.ledger_lock(led, timeout=0.25):
+                    raise AssertionError("the lock was reported as taken")
+            except TimeoutError:
+                pass
+        finally:
+            yt.os.open = real_open
+            Path.stat = real_stat
+            lock.unlink(missing_ok=True)
+        elapsed = time.monotonic() - started
+        assert elapsed < 5, f"the wait did not end: {elapsed:.1f}s"
+
+
+def test_the_lock_is_taken_despite_windows_reporting_eacces():
+    """Windows answers EACCES, not EEXIST, when the lock exists and is being deleted.
+
+    The 24-thread test caught this: `os.open(..., O_CREAT | O_EXCL)` raised PermissionError and the
+    whole claim died instead of waiting its turn.
+    """
+    with tempfile.TemporaryDirectory() as d:
+        led = Path(d) / "publish_ledger.json"
+        lock = led.with_name(led.name + ".lock")
+        lock.write_text("held-by-someone-else", encoding="utf-8")
+
+        def flaky_open(*args, **kwargs):
+            raise PermissionError(13, "Permission denied")
+
+        real_open = yt.os.open
+        yt.os.open = flaky_open
+        try:
+            try:
+                with yt.ledger_lock(led, timeout=0.2):
+                    pass
+            except TimeoutError:
+                pass                      # the honest outcome: it waited, then said so
+            else:
+                raise AssertionError("a PermissionError was treated as a successful lock")
+        finally:
+            yt.os.open = real_open
+            lock.unlink(missing_ok=True)
 
 
 def test_a_lock_is_only_removed_by_the_run_that_took_it():
