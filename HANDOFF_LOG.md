@@ -4,6 +4,79 @@ Newest first. Every change gets an entry, with evidence. See [AGENTS.md](AGENTS.
 
 ---
 
+## 2026-11-17 (verification landed, and it broke the scope request; the listener was IPv4-only)
+
+**Skills loaded:** `x-forchi-bridge` (to answer "look at how ForChi uses the scope" — its `youtube.js` carries the
+approved pair and `identifyChannel()`, which is the read-back and the no-channel refusal), `x-google-console-oauth`
+(the loopback trap, the paste-back route, and where the failure catalogue lives), `x-watchdog` (the day-4/5 reminder
+mail, which is what the owner was reading when the link failed), `x-vps-deploy` (token files are among the things git
+cannot carry).
+
+**Plane(s):** this folder and `169.58.212.7:/root/X`.
+
+**Asked:** "i have verified the youtube scope…", then "i keep seeing this site can not be reached after selecting all
+the access permission..", then "you should look at how forchi use the scope since you use the same scope too".
+
+### Three faults, and the second one explains both symptoms
+
+| # | Fault | Evidence |
+| :--- | :--- | :--- |
+| 1 | **The scope request was no longer legal.** X asked for `youtube.upload` + **`youtube.readonly`** + `openid` + `email`. The app is one client serving three channels and its verified Data Access list is ForChi's pair: `youtube.upload` + **`youtube.force-ssl`**. Testing status masked this — test users bypass the approved-scope check — so the moment verification landed, the readonly request was one Google would refuse | `grep SCOPES C:/Users/hp/forchi/src/workflows/video/youtube.js` → the approved pair; `youtube_auth.SCOPES` now matches it |
+| 2 | **The consent listener bound `127.0.0.1` only.** Browsers resolve `localhost` to `::1` first, so approving produced "this site can't be reached" while the listener was answering IPv4 perfectly | `127.0.0.1:8765` → **HTTP 200**, `[::1]:8765` → **actively refused**, measured on the same running listener |
+| 3 | A consent from an account owning **no channel** was saved anyway | ForChi's `identifyChannel()` exists precisely to refuse it — a working channel was overwritten by such an account |
+
+### Changed
+
+| File | Change |
+| :--- | :--- |
+| `youtube_auth.py` | `SCOPES` = `youtube.upload` + **`youtube.force-ssl`** + `openid` + `email`. `loopback_server()` binds one **dual-stack** socket (`AF_INET6`, `IPV6_V6ONLY=0`) for both `127.0.0.1` and `[::1]`, with `allow_reuse_address` **off** (on Windows `SO_REUSEADDR` lets a second process steal a listening port); a busy port now says so. `owns_no_channel()` refuses a no-channel consent in all three save paths; `(unread)` is still kept |
+| `youtube_upload.py` | **a real hang fixed**: the ledger lock checked its deadline only after a *successful* `stat()` and skipped the sleep on the exception paths, so a lock whose `stat()` kept failing spun for ever — no timeout, no sleep, no output, indistinguishable from a wedged pipeline. The deadline is now checked first on every pass and every failing pass sleeps |
+| `x_watchdog.py` | the day-4/5 mail now says what to do when the tab says "site can't be reached": change `localhost` → `127.0.0.1` and press Enter, or paste the whole address into `--from-url` |
+| `tests/test_oauth_scopes.py` | **new**, 9 tests: the requested strings are the approved pair, `youtube.readonly` is gone, the consent URL carries them, `owns_no_channel` vs `(unread)`, the listener answers on **both** loopbacks, a busy port is reported not crashed |
+| `tests/test_ledger_safety.py` | 12 tests: added the hang case and a "fresh lock is honoured and named" case; the EACCES case stays |
+
+### Verified
+
+```text
+python tests\run_tests.py             ->  71 passed, 0 failed   (local, 29.4s)
+.venv/bin/python tests/run_tests.py   ->  71 passed, 0 failed   (on 169.58.212.7 at 2440eee)
+
+# the listener, before and after
+before:  127.0.0.1 -> HTTP 200      [::1] -> actively refused
+after:   127.0.0.1 -> HTTP 200      [::1] -> HTTP 200      localhost -> HTTP 200
+# and proven from the owner's own browser context:
+browser_navigate http://localhost:8765/emmanuel/callback?error=probe  ->  "Not authorised / probe"
+
+# the paste-back route, preflighted with a bogus code (no real code touched)
+--from-url "...&code=4/0Abogus"  ->  HTTP 400 invalid_grant "Bad Request"   (redirect accepted)
+
+# what the host now requests
+requested: youtube.upload youtube.force-ssl openid email      readonly present: False
+```
+
+### Still open — needs the owner, one click
+
+Both grants died at **15 Nov 10:06 / 10:08** and nothing has posted since the 14th. The watchdog has been mailing
+daily ("nothing posted for slot(s) 10:xx", `mail: sent to aguswigad@gmail.com`), so this is loud, not silent.
+Renders kept being produced every day, so no footage is lost.
+
+The listener is running for emmanuel on this laptop. To finish, either click the link printed by
+`python scripts\youtube_auth.py --serve --workflow emmanuel`, or open the consent URL in any browser that can reach
+this machine and then:
+
+```powershell
+python scripts\youtube_auth.py --workflow emmanuel --push
+```
+
+Then jephter the same way. `--push` copies the sealed token to the host and makes the host's own uploader name the
+channel, so a wrong-account token fails on the command just run rather than at 17:00.
+
+**Worth doing immediately after**: `youtube.force-ssl` is now in the default set, so `videos.update` works — the two
+hand-fixes left over from 2026-11-02 (`f0WJBpcMRVw` private → public, `pPpfLrRgOzU`'s leaked-prompt title) can now
+be corrected by code instead of in Studio.
+
+---
+
 ## 2026-11-08 (the "broken" OAuth link was a missing listener; `--push` closes the half-step)
 
 **Skills loaded:** `x-google-console-oauth` (its failure catalogue had the exact symptom — a loopback redirect and a

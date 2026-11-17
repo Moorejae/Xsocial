@@ -144,8 +144,75 @@ good and the remaining fault is one of exactly two things — and they need diff
 
 | What the person saw | What actually happened | Fix |
 | :--- | :--- | :--- |
-| the sign-in page, then **"site can't be reached" / "localhost refused to connect"** | approved, and no listener on `localhost:8765` | either run `--serve` **first** (`python scripts\youtube_auth.py --serve` prints both links and waits 15 min), or paste the failing address back with `--from-url` |
+| the sign-in page, then **"site can't be reached" / "localhost refused to connect"** | approved, and no listener on `localhost:8765` **or the listener answered IPv4 only while the browser resolved `localhost` to `::1`** | `--serve` first (prints both links, waits 15 min), then see the IPv6 section below; or paste the failing address back with `--from-url` |
 | **"Access blocked / Error 403: access_denied"** | the Google account is not a test user on that project while the app is in Testing | add the account as a test user in the console — a link from an email cannot fix this |
+| **`Error 400: invalid_scope`** on the consent page, after the app was verified | the link requests a scope the app is **not approved for** — see the scope-matching section below | request exactly the approved strings |
+
+### The one that only appears after verification: the scope list
+
+While the app is in **Testing**, test users bypass the approved-scope check, so a request for
+`youtube.readonly` works for weeks. **The moment verification lands, a production app refuses every scope that is
+not on its Data Access list**, and the consent page answers `invalid_scope` — or, if the listener was also broken,
+you may never see that page at all because the browser is still on the old failure.
+
+The list Google approved for this project is the pair **ForChi's own code carries** — which is the cheapest place
+to read the truth:
+
+```bash
+grep -n 'SCOPES' C:/Users/hp/forchi/src/workflows/video/youtube.js
+# const SCOPES = "…/auth/youtube.upload …/auth/youtube.force-ssl";
+```
+
+X now requests exactly that pair (`scripts/youtube_auth.py` `SCOPES`), plus `openid`/`email` which are
+non-sensitive and always allowed. `youtube.force-ssl` is a **read** scope as well as a write one, so the channel
+read-back (`channels.list(mine=true)`) that `youtube.readonly` existed for still works — and `videos.update`,
+`thumbnails.set` and `captions.insert` come with it.
+
+`tests/test_oauth_scopes.py` pins the strings and fails if `youtube.readonly` creeps back.
+
+### Why a browser says "site can't be reached" when the listener is running: IPv6
+
+A listener bound to `127.0.0.1` only is **not** reachable as `localhost` for a browser that resolves the name to
+`::1` first — and the cookie is that the same URL works from PowerShell, because that path picked IPv4.
+
+```powershell
+foreach ($h in '127.0.0.1','[::1]') {
+  try { (Invoke-WebRequest "http://$h`:8765/jephter/callback?error=probe" -UseBasicParsing -TimeoutSec 4).StatusCode }
+  catch { "FAILED $h" }
+}
+# 200 / 200 = fine.      200 / FAILED = the IPv6 trap, and the browser is the one that failed.
+```
+
+`youtube_auth.loopback_server()` binds one **dual-stack** socket (`AF_INET6` + `IPV6_V6ONLY=0`) so either
+resolution lands. It also leaves `allow_reuse_address` off: on Windows `SO_REUSEADDR` lets a second process bind a
+port that is already listening and steal its traffic, so two listeners look healthy and answer unpredictably.
+
+Two consequences worth knowing:
+
+- **The browser's final URL does not have to match the registered redirect.** Only the `redirect_uri` *parameter*
+  in the token exchange does. So on the error page, changing `localhost` to `127.0.0.1` in the address bar and
+  pressing Enter keeps the code valid and hits the listener.
+- **Test the browser before blaming the link**: navigate the VS Code integrated browser to
+  `http://localhost:8765/<wf>/callback?error=probe`. If that renders, the listener is proven and the failing
+  browser is a different context or device (a phone that opened the mail, say).
+
+### Is a pasted URL worth trying? Ask Google with a bogus code
+
+Exchanging a deliberately invalid code answers the only question that matters — whether `redirect_uri` is
+accepted — without touching the real one:
+
+```powershell
+python scripts\youtube_auth.py --workflow emmanuel --from-url "http://localhost:8765/emmanuel/callback?state=x&code=4/0Abogus"
+# invalid_grant / "Bad Request"       -> the redirect is registered; the paste-back WILL work
+# redirect_uri_mismatch              -> nothing will work until the console URI is fixed
+```
+
+### A consent from an account that owns no channel is refused
+
+`channels.list(mine=true)` succeeding with **no items** means the wrong Google account was chosen, and that token
+can never upload. ForChi paid for this: a working channel's token was overwritten by an account that owned none.
+All three X save paths now refuse and write nothing. `(unread)` — the check itself failed — is different and still
+keeps the token, because that is the 2026-11-01 lesson where a 403 threw away two good refresh tokens.
 
 ### Re-authorising on the laptop leaves the host holding the old token
 
