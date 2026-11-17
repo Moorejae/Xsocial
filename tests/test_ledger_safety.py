@@ -144,7 +144,11 @@ def test_the_lock_wait_always_ends_even_when_stat_keeps_failing():
             raise PermissionError(13, "Permission denied")
 
         def refuse_stat(self, *a, **k):
-            raise PermissionError(13, "Permission denied")
+            # Only the lock file: `mkdir(exist_ok=True)` calls stat() on the parent, so a blanket
+            # patch fails earlier and tests the wrong thing (it does on Linux, where mkdir re-checks).
+            if self.name.endswith(".lock"):
+                raise PermissionError(13, "Permission denied")
+            return real_stat(self, *a, **k)
 
         try:
             yt.os.open = refuse_open          # patched inside the try, so the restore always runs
