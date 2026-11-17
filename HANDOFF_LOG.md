@@ -71,6 +71,17 @@ python scripts\youtube_auth.py --workflow emmanuel --push
 Then jephter the same way. `--push` copies the sealed token to the host and makes the host's own uploader name the
 channel, so a wrong-account token fails on the command just run rather than at 17:00.
 
+**All four of today's slots have already spent their 3 attempts**, so they will *not* retry by themselves once the
+token is valid — the watchdog is right to call them dead. Reclaim them, cheapest first, with the renders that are
+already on disk:
+
+```powershell
+python scripts\vps.py ".venv/bin/python scripts/x_scheduler.py --once --privacy public --force --no-produce"
+```
+
+The ledger still refuses a file it has already published, so `--force` cannot double-post. Tomorrow's slots need
+nothing.
+
 **Worth doing immediately after**: `youtube.force-ssl` is now in the default set, so `videos.update` works — the two
 hand-fixes left over from 2026-11-02 (`f0WJBpcMRVw` private → public, `pPpfLrRgOzU`'s leaked-prompt title) can now
 be corrected by code instead of in Studio.
