@@ -2495,3 +2495,52 @@ being the only way in. Recorded in AGENTS.md §5.
 
 **Note on reuse:** the Contabo API credentials found in another project's `.env` are dead. Do not copy them here or
 retry them; if API access is wanted, mint a fresh API client in the panel.
+
+---
+
+## 2026-11-18 · Both channels re-authorised under the verified app; today's four posts recovered
+
+**Why.** Both refresh tokens were dead — `invalid_grant: Token has been expired or revoked` — on the laptop **and**
+on the host. They were granted on 2026-11-08 while the OAuth app was still in **Testing**, where a refresh token
+expires after **7 days**; they died around the 15th, so both channels failed today at 10:0x/17:xx
+(`RuntimeError: upload rc=1`). The app went **In production** on 2026-11-17, so this consent was the last manual one.
+
+**No console change was needed**, and that was proven rather than assumed: the consent links use the same client
+ForChi was verified under (`246862956620-jcb3…`), request exactly the approved pair (`youtube.upload` +
+`youtube.force-ssl`, plus non-sensitive `openid`/`email`), and both redirect URIs are registered — a bogus code
+returned `invalid_grant`, **not** `redirect_uri_mismatch`.
+
+**Who consented.** Not the operator: `chineduagu598@gmail.com` and `steadfast7878@gmail.com` are the **clients'**
+accounts, so each client opened the link, approved, landed on the expected `localhost refused to connect` page, and
+returned the address-bar URL, which was exchanged with `--from-url` (the loopback redirect is why the paste-back
+exists). Stored:
+
+| workflow | channel | id | scopes | refresh_token_expires_in |
+| :--- | :--- | :--- | :--- | :--- |
+| jephter | **Chinedu Jephtah** | `UCdp3tJItzt-sI-9UGX9CCvw` | upload + force-ssl | **absent = permanent** |
+| emmanuel | **Brown Cinema** | `UCYjRtF_ECcIaF8ldCGXAI2w` | upload + force-ssl | **absent = permanent** |
+
+The absence of `refresh_token_expires_in` in the token response is the machine-readable proof these are no longer
+7-day tokens. Do not "fix" this by adding test users; a production app needs none.
+
+**Today recovered.** The renders had already been produced (07:0x and 14:0x local), only the uploads had failed, so a
+`--force` pass published the existing files — no re-render:
+
+- jephter, post 10:01 -> <https://youtu.be/y3wM9M2wr9E>
+- jephter, post 17:06 -> <https://youtu.be/LIG7RBJWNe8>
+- emmanuel, post 10:40 -> <https://youtu.be/at2VY8HgR2g>
+- emmanuel, post 17:37 -> <https://youtu.be/uaSOLp47HLg>
+
+All four verified by `oembed author_name` (the only proof of which channel owns a video): two on *Chinedu Jephtah*,
+two on *Brown Cinema*. `--status` now reads `today complete` for both, and the watchdog reports *both channels are
+healthy* with no reminders owed.
+
+**Deployed.** `4614923` (the client-consent case documented in `skills/x-google-console-oauth`) pushed to
+`Moorejae/Xsocial` and pulled on `169.58.212.7`; both tokens `--push`ed, and the host's own `youtube_upload.py --check`
+named the correct channel for each — so a wrong-account token would have failed on the command that just ran.
+`x-daily.timer` and `x-watchdog.timer` are active; tomorrow's slots verified (jephter 10:11, emmanuel 10:34,
+jephter 17:07, emmanuel 17:34).
+
+**Left open.** Nothing blocking. The next re-auth should never be needed, but if a client ever revokes access at
+`myaccount.google.com/permissions`, the same client-facing message in
+`skills/x-google-console-oauth` is the path.
