@@ -207,6 +207,54 @@ python scripts\youtube_auth.py --workflow emmanuel --from-url "http://localhost:
 # redirect_uri_mismatch              -> nothing will work until the console URI is fixed
 ```
 
+### When the channel's Google account belongs to a client (the real case for both X channels)
+
+Measured 2026-11-18: **both X tokens were dead** — `invalid_grant: Token has been expired or revoked` — because they
+were granted on 2026-11-08 while the app was still in **Testing** (7-day expiry). The app went **In production**
+2026-11-17, so re-consenting now yields tokens that do **not** expire. That makes this the last manual re-auth.
+
+The catch: `chineduagu598@gmail.com` (Jephter / *Chinedu Jephtah*) and `steadfast7878@gmail.com` (Emmanuel / *Brown
+Cinema*) are **the clients' accounts, not the owner's**. The operator cannot sign in, so the operator cannot grant —
+the client must. `x_watchdog.py`'s reminder is addressed to the operator and assumes the operator can sign in, so it
+does not cover this case; forward the message below instead.
+
+No console change is needed first. Prove that in one request before sending the link to anyone — a bogus code must
+come back `invalid_grant`, **not** `redirect_uri_mismatch`:
+
+```powershell
+python scripts\youtube_auth.py --workflow jephter --from-url "http://localhost:8765/jephter/callback?state=x&code=4/0Abogus"
+# invalid_grant / "Bad Request"  -> client, scopes AND redirect are all registered; the paste-back will work
+# redirect_uri_mismatch          -> stop: nothing works until the console URI is fixed
+```
+
+Then send the client this (fill the link in). It is deliberately short, and it names the error page up front,
+because "this site can't be reached" is what makes people think it failed and give up:
+
+> Hello. One quick one-time step so your YouTube channel keeps publishing videos.
+>
+> **1.** Open this link and sign in with the Google account that owns the channel:
+> `<link>`
+> **2.** Keep the **YouTube** permission ticked (without it the tool can read the channel but cannot upload), then
+> press **Continue/Allow**.
+> **3.** The page will then say **"This site can't be reached"** or **"localhost refused to connect". That is
+> expected — it means it worked.** Nothing is broken.
+> **4.** Copy the **entire** address bar (everything, starting `http://localhost:8765/...`) and send it back to me
+> straight away. It only lasts about 10 minutes.
+>
+> What you are granting: permission for the publishing tool to upload videos to your channel. Nothing already
+> published changes.
+
+Then exchange it here, with the **loopback** redirect_uri (the port must match what the link used):
+
+```powershell
+python scripts\youtube_auth.py --workflow jephter  --from-url "<the whole URL they sent>"
+python scripts\youtube_auth.py --workflow jephter --access-token   # must print the channel title
+python scripts\youtube_auth.py --workflow jephter --push           # lands on the host and proves itself there
+```
+
+Order matters: `--from-url` → `--access-token` (names the channel, so a wrong account is caught here) → `--push`
+(the host runs its own `youtube_upload.py --check`). Only then is a missed slot worth reclaiming.
+
 ### A consent from an account that owns no channel is refused
 
 `channels.list(mine=true)` succeeding with **no items** means the wrong Google account was chosen, and that token
